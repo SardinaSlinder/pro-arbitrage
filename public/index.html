@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Arbitraggio Pro</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <!-- LOGIN -->
+    <div id="loginScreen" class="login-screen">
+        <div class="login-box">
+            <h1>⚡ Arbitraggio Pro</h1>
+            <p>Gestione capitale betting a 2</p>
+            <input type="text" id="loginName" placeholder="Il tuo nome" maxlength="20">
+            <button onclick="connect()">Entra</button>
+            <div id="loginError" class="error"></div>
+            <div class="login-info">
+                <p>🟢 Primo entrato = Giocatore A</p>
+                <p>🔵 Secondo entrato = Giocatore B</p>
+                <p>⚪ Terzo+ = Osservatore</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- APP -->
+    <div id="mainApp" class="app" style="display: none;">
+        <!-- Header -->
+        <header class="header">
+            <div class="logo">⚡ Arbitraggio Pro</div>
+            <div class="center">
+                <span class="status" id="connStatus">⚫</span>
+                <span class="badge" id="playerBadge">-</span>
+            </div>
+            <button class="btn-menu" onclick="togglePanel()">☰</button>
+        </header>
+
+        <!-- Sidebar -->
+        <nav class="sidebar" id="sidebar">
+            <div class="nav-section">
+                <div class="nav-title">Menu</div>
+                <button class="nav-btn active" onclick="show('dashboard')">
+                    <span>📊</span> Dashboard
+                </button>
+                <button class="nav-btn" onclick="show('calc')">
+                    <span>🧮</span> Calcolatore
+                </button>
+                <button class="nav-btn" onclick="show('history')">
+                    <span>📜</span> Storico
+                </button>
+                <button class="nav-btn" onclick="show('stats')">
+                    <span>📈</span> Statistiche
+                </button>
+                <button class="nav-btn" onclick="show('sim')">
+                    <span>🔮</span> Simulazione
+                </button>
+                <button class="nav-btn" onclick="show('settings')">
+                    <span>⚙️</span> Impostazioni
+                </button>
+            </div>
+        </nav>
+
+        <!-- Main -->
+        <main class="main" id="mainContent">
+            
+            <!-- DASHBOARD -->
+            <section class="section active" id="dashboard">
+                <h2>Dashboard Conti</h2>
+                
+                <div class="players-grid">
+                    <div class="player-card a">
+                        <div class="p-header">
+                            <div class="avatar">A</div>
+                            <div>
+                                <div class="p-name" id="nameA">Giocatore A</div>
+                                <div class="p-status" id="statusA">⚫ Offline</div>
+                            </div>
+                        </div>
+                        <div class="balance">
+                            <div class="label">Saldo</div>
+                            <div class="amount" id="balA">€0.00</div>
+                        </div>
+                        <div class="stats">
+                            <div><span>Inv.</span><b id="invA">€0</b></div>
+                            <div><span>Vinto</span><b id="wonA">€0</b></div>
+                            <div><span>Prof.</span><b id="profA" class="pos">€0</b></div>
+                        </div>
+                    </div>
+
+                    <div class="player-card b">
+                        <div class="p-header">
+                            <div class="avatar">B</div>
+                            <div>
+                                <div class="p-name" id="nameB">Giocatore B</div>
+                                <div class="p-status" id="statusB">⚫ Offline</div>
+                            </div>
+                        </div>
+                        <div class="balance">
+                            <div class="label">Saldo</div>
+                            <div class="amount" id="balB">€0.00</div>
+                        </div>
+                        <div class="stats">
+                            <div><span>Inv.</span><b id="invB">€0</b></div>
+                            <div><span>Vinto</span><b id="wonB">€0</b></div>
+                            <div><span>Prof.</span><b id="profB" class="pos">€0</b></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="actions">
+                    <button class="btn prim" onclick="modal('funds')">💰 Aggiungi Fondi</button>
+                    <button class="btn prim" onclick="modal('bet')">🎲 Nuova Bet</button>
+                    <button class="btn sec" onclick="settlement()">⚖️ Calcola Pareggio</button>
+                </div>
+
+                <div class="settlement-box" id="settleBox" style="display: none;">
+                    <h3>⚖️ Situazione Conti</h3>
+                    <p id="settleText"></p>
+                    <div class="amount" id="settleAmount"></div>
+                    <button class="btn prim" onclick="confirmSettle()">✅ Conferma Pagamento</button>
+                </div>
+            </section>
+
+            <!-- CALCOLATORE -->
+            <section class="section" id="calc">
+                <h2>🧮 Calcolatore Surebet</h2>
+                
+                <div class="calc-layout">
+                    <div class="calc-left">
+                        <div class="form">
+                            <label>Esiti</label>
+                            <div class="radio">
+                                <button class="r-btn active" onclick="setBets(2)">2</button>
+                                <button class="r-btn" onclick="setBets(3)">3</button>
+                            </div>
+                            
+                            <label>Capitale (€)</label>
+                            <input type="number" id="capTotal" placeholder="1000">
+                            
+                            <label>Divisione</label>
+                            <select id="splitMode" onchange="splitChange()">
+                                <option value="equal">50/50</option>
+                                <option value="prop">Proporzionale</option>
+                                <option value="custom">Custom</option>
+                            </select>
+                            
+                            <div id="customSplit" style="display: none;">
+                                <label>A: <span id="valA">50</span>%</label>
+                                <input type="range" min="0" max="100" value="50" 
+                                    oninput="document.getElementById('valA').textContent=this.value;
+                                            document.getElementById('valB').textContent=100-this.value;">
+                                <label>B: <span id="valB">50</span>%</label>
+                            </div>
+                        </div>
+
+                        <div id="betsContainer"></div>
+                        
+                        <button class="btn prim full" onclick="calculate()">🚀 Calcola</button>
+                    </div>
+
+                    <div class="calc-right">
+                        <h3>Risultati</h3>
+                        <div class="result-box" id="resA">
+                            <h4>A</h4>
+                            <p>Inserisci dati...</p>
+                        </div>
+                        <div class="result-box" id="resB">
+                            <h4>B</h4>
+                            <p>Inserisci dati...</p>
+                        </div>
+                        <div class="total-box">
+                            <div>Profitto: <b id="totProfit">€0</b></div>
+                            <div>ROI: <b id="totRoi">0%</b></div>
+                        </div>
+                        <button class="btn prim full" onclick="saveCalc()" id="btnSave" disabled>
+                            💾 Salva Operazione
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- STORICO -->
+            <section class="section" id="history">
+                <h2>📜 Storico</h2>
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Data</th>
+                                <th>Tipo</th>
+                                <th>Inv. A</th>
+                                <th>Inv. B</th>
+                                <th>Prof. A</th>
+                                <th>Prof. B</th>
+                                <th>Tot</th>
+                            </tr>
+                        </thead>
+                        <tbody id="histBody"></tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- STATISTICHE -->
+            <section class="section" id="stats">
+                <h2>📈 Statistiche</h2>
+                <div class="stats-grid">
+                    <div class="stat-box">
+                        <div class="num" id="stOps">0</div>
+                        <div class="lab">Operazioni</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="num" id="stAvg">€0</div>
+                        <div class="lab">Profitto Medio</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="num" id="stRoi">0%</div>
+                        <div class="lab">ROI</div>
+                    </div>
+                </div>
+                
+                <div class="balance-check">
+                    <h3>⚖️ Controllo Equilibrio</h3>
+                    <div class="bar">
+                        <div class="fill" id="balBar" style="width: 50%"></div>
+                    </div>
+                    <div class="labels">
+                        <span>Avanti A</span>
+                        <span>Parità</span>
+                        <span>Avanti B</span>
+                    </div>
+                    <div id="balAlert"></div>
+                </div>
+            </section>
+
+            <!-- SIMULAZIONE -->
+            <section class="section" id="sim">
+                <h2>🔮 Simulazione</h2>
+                <div class="sim-form">
+                    <div class="row">
+                        <label>Inizio A: <input type="number" id="simA" value="100"></label>
+                        <label>Inizio B: <input type="number" id="simB" value="100"></label>
+                    </div>
+                    <div class="row">
+                        <label>Profitto %: <input type="number" id="simProf" value="3" step="0.1"></label>
+                        <label>Op/giorno: <input type="number" id="simFreq" value="2"></label>
+                    </div>
+                    <div class="row">
+                        <label>Giorni: <input type="number" id="simDays" value="30"></label>
+                        <label>Obiettivo €: <input type="number" id="simTarget" value="500"></label>
+                    </div>
+                    <button class="btn prim" onclick="runSim()">Avvia</button>
+                </div>
+                
+                <div id="simRes" style="display: none;">
+                    <div class="sim-grid">
+                        <div>
+                            <h4>A Finale: <span id="simFinA"></span></h4>
+                            <p>Giorno 500€: <span id="simD500A"></span></p>
+                            <p>Giorno 1000€: <span id="simD1000A"></span></p>
+                        </div>
+                        <div>
+                            <h4>B Finale: <span id="simFinB"></span></h4>
+                            <p>Giorno 500€: <span id="simD500B"></span></p>
+                            <p>Giorno 1000€: <span id="simD1000B"></span></p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- IMPOSTAZIONI -->
+            <section class="section" id="settings">
+                <h2>⚙️ Impostazioni</h2>
+                
+                <div class="set-card">
+                    <h3>Tema</h3>
+                    <div class="colors">
+                        <div class="c-opt active" style="background: #00ff88" onclick="theme('green')"></div>
+                        <div class="c-opt" style="background: #00d9ff" onclick="theme('blue')"></div>
+                        <div class="c-opt" style="background: #ff4757" onclick="theme('red')"></div>
+                        <div class="c-opt" style="background: #a55eea" onclick="theme('purple')"></div>
+                    </div>
+                </div>
+
+                <div class="set-card">
+                    <h3>Profilo</h3>
+                    <input type="text" id="setName" placeholder="Nome">
+                    <button class="btn prim" onclick="saveName()">Salva</button>
+                </div>
+
+                <div class="set-card">
+                    <h3>Dati</h3>
+                    <button class="btn sec" onclick="exportData()">📥 Esporta JSON</button>
+                </div>
+            </section>
+        </main>
+
+        <!-- Right Panel -->
+        <aside class="r-panel" id="rPanel">
+            <div class="tabs">
+                <button class="t-btn active" onclick="panelTab('app')">🔔<span id="badApp">0</span></button>
+                <button class="t-btn" onclick="panelTab('chat')">💬</button>
+                <button class="t-btn" onclick="panelTab('log')">📋</button>
+            </div>
+            
+            <div class="p-content">
+                <div class="p-sec active" id="p-app">
+                    <h4>Richieste</h4>
+                    <div id="appList"></div>
+                </div>
+                <div class="p-sec" id="p-chat">
+                    <div class="msgs" id="chatMsgs"></div>
+                    <div class="inp">
+                        <input type="text" id="chatInp" placeholder="Messaggio..." onkeypress="if(event.key==='Enter')sendChat()">
+                        <button onclick="sendChat()">➤</button>
+                    </div>
+                </div>
+                <div class="p-sec" id="p-log">
+                    <div id="logList"></div>
+                </div>
+            </div>
+        </aside>
+    </div>
+
+    <!-- Modal -->
+    <div id="modal" class="modal" style="display: none;">
+        <div class="m-box">
+            <h3 id="mTitle">Titolo</h3>
+            <div id="mBody"></div>
+            <div class="m-foot">
+                <button class="btn sec" onclick="closeModal()">Annulla</button>
+                <button class="btn prim" onclick="mConfirm()">OK</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Notifiche -->
+    <div id="notifs"></div>
+
+    <script src="/js/app.js"></script>
+</body>
+</html>
