@@ -376,13 +376,64 @@ function modal(type) {
             <input type="number" id="mAmt" placeholder="100" step="0.01">
         `;
         window.mConfirm = () => {
+            const amt = parseFloat(document.getElementById('mAmt').value) || 0;
+            if (!amt) return notify('Inserisci importo', 'err');
             State.ws.send(JSON.stringify({
                 type: 'REQUEST_BALANCE_UPDATE',
                 targetPlayer: document.getElementById('mPlayer').value,
-                amount: parseFloat(document.getElementById('mAmt').value) || 0
+                amount: amt
             }));
             closeModal();
             notify('Richiesta inviata', 'success');
+        };
+        
+    } else if (type === 'bet') {
+        t.textContent = '🎲 Nuova Scommessa';
+        b.innerHTML = `
+            <label>Descrizione/Evento</label>
+            <input type="text" id="mDesc" placeholder="Es: Milan-Inter">
+            <label>Investimento Totale €</label>
+            <input type="number" id="mInv" placeholder="100" step="0.01">
+            <label>Vincita Totale €</label>
+            <input type="number" id="mWin" placeholder="105" step="0.01">
+            <label>Divisione</label>
+            <select id="mSplit">
+                <option value="equal">50% / 50%</option>
+                <option value="prop">Proporzionale al capitale</option>
+            </select>
+        `;
+        window.mConfirm = () => {
+            const inv = parseFloat(document.getElementById('mInv').value) || 0;
+            const win = parseFloat(document.getElementById('mWin').value) || 0;
+            if (!inv || !win) return notify('Inserisci tutti i valori', 'err');
+            
+            const profit = win - inv;
+            const splitMode = document.getElementById('mSplit').value;
+            let splitA = 0.5;
+            
+            if (splitMode === 'prop') {
+                const balA = State.data.players.A.balance || 1;
+                const balB = State.data.players.B.balance || 1;
+                splitA = balA / (balA + balB);
+            }
+            
+            const splitB = 1 - splitA;
+            
+            State.ws.send(JSON.stringify({
+                type: 'REQUEST_BET',
+                betData: {
+                    type: 'surebet',
+                    description: document.getElementById('mDesc').value || 'Scommessa',
+                    investA: inv * splitA,
+                    investB: inv * splitB,
+                    returnA: win * splitA,
+                    returnB: win * splitB,
+                    profitA: profit * splitA,
+                    profitB: profit * splitB
+                }
+            }));
+            closeModal();
+            notify('Richiesta scommessa inviata', 'success');
         };
     }
 }
@@ -457,4 +508,5 @@ function runSim() {
 // Init
 document.addEventListener('DOMContentLoaded', () => {
     renderBets(2);
+
 });
