@@ -7,19 +7,17 @@
     <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
-    <!-- LOGIN CON SCELTA RUOLO -->
+    <!-- LOGIN -->
 <div id="loginScreen" class="login-screen">
     <div class="login-box">
         <h1>⚡ Arbitraggio Pro</h1>
         
-        <!-- Step 1: Nome -->
         <div id="loginStep1">
             <p>Inserisci il tuo nome</p>
             <input type="text" id="loginName" placeholder="Il tuo nome" maxlength="20">
-            <button onclick="goToStep2()">Avanti</button>
+            <button onclick="goToStep2()">Avanti →</button>
         </div>
         
-        <!-- Step 2: Scelta ruolo -->
         <div id="loginStep2" style="display: none;">
             <p>Scegli il tuo ruolo</p>
             <div class="role-choices">
@@ -45,9 +43,9 @@
         <div id="loginError" class="error"></div>
         
         <div class="login-info">
-            <p>📥 Puoi anche importare dati precedenti</p>
+            <p>📥 Hai un backup?</p>
             <input type="file" id="importFile" accept=".json" onchange="importOnLogin(this)" style="display: none;">
-            <button class="btn-import" onclick="document.getElementById('importFile').click()">📤 Importa Backup</button>
+            <button class="btn-import" onclick="document.getElementById('importFile').click()">📤 Importa Dati</button>
         </div>
     </div>
 </div>
@@ -368,3 +366,4 @@
 </body>
 
 </html>
+
