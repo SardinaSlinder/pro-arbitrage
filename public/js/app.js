@@ -12,16 +12,9 @@ const State = {
 };
 
 function connect() {
-    const name = document.getElementById('loginName').value.trim();
-    if (!name) return showLoginErr('Inserisci nome');
-    
-    State.name = name;
-    State.ws = new WebSocket(WS_URL);
-    
-    State.ws.onopen = () => {
-        document.getElementById('connStatus').classList.add('on');
-        console.log('Connesso a Render');
-    };
+    // Non usiamo più questa, ora usiamo goToStep2() e chooseRole()
+    console.log("Usa il nuovo sistema di login a 2 step");
+}
     
     State.ws.onmessage = (e) => {
         const d = JSON.parse(e.data);
@@ -505,8 +498,238 @@ function runSim() {
     document.getElementById('simRes').style.display = 'block';
 }
 
+// ========== SCELTA RUOLO ==========
+
+let tempName = '';
+
+function goToStep2() {
+    tempName = document.getElementById('loginName').value.trim();
+    if (!tempName) {
+        document.getElementById('loginError').textContent = 'Inserisci il tuo nome';
+        return;
+    }
+    
+    document.getElementById('loginStep1').style.display = 'none';
+    document.getElementById('loginStep2').style.display = 'block';
+    
+    // Simula disponibilità (in realtà la controlliamo alla connessione)
+    document.getElementById('btnA').disabled = false;
+    document.getElementById('btnB').disabled = false;
+}
+
+function backToStep1() {
+    document.getElementById('loginStep2').style.display = 'none';
+    document.getElementById('loginStep1').style.display = 'block';
+}
+
+function chooseRole(role) {
+    State.name = tempName;
+    
+    // Connessione WebSocket
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${protocol}//${window.location.host}`;
+    
+    State.ws = new WebSocket(wsUrl);
+    
+    State.ws.onopen = () => {
+        State.connected = true;
+        
+        // Invia scelta ruolo
+        State.ws.send(JSON.stringify({
+            type: 'CHOOSE_ROLE',
+            role: role,
+            name: tempName
+        }));
+    };
+    
+    State.ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        handleServerMessage(data);
+    };
+    
+    State.ws.onclose = () => {
+        State.connected = false;
+        document.getElementById('connStatus').classList.remove('on');
+        setTimeout(() => {
+            if (State.name) chooseRole(role);
+        }, 3000);
+    };
+    
+    State.ws.onerror = (err) => {
+        console.error('WebSocket error:', err);
+        document.getElementById('loginError').textContent = 'Errore connessione';
+    };
+}
+
+// ========== EXPORT/IMPORT ==========
+
+function exportFullData() {
+    fetch('/api/export')
+        .then(r => r.json())
+        .then(data => {
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `arbitraggio-backup-${new Date().toISOString().split('T')[0]}.json`;
+            a.click();
+            notify('Dati esportati con successo!', 'success');
+        })
+        .catch(err => notify('Errore export: ' + err.message, 'err'));
+}
+
+function importFullData(input) {
+    const file = input.files[0];
+    if (!file) return;
+    
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        try {
+            const data = JSON.parse(e.target.result);
+            fetch('/api/import', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            })
+            .then(r => r.json())
+            .then(res => {
+                if (res.success) {
+                    notify('Dati importati! Ricarica la pagina per vedere i cambiamenti', 'success');
+                    setTimeout(() => location.reload(), 2000);
+                }
+            });
+        } catch (err) {
+            notify('File non valido: ' + err.message, 'err');
+        }
+    };
+    reader.readAsText(file);
+}
+
+function importOnLogin(input) {
+    const file = input.files[0];
+    if (!file) return;
+    
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        try {
+            const data = JSON.parse(e.target.result);
+            localStorage.setItem('pendingImport', JSON.stringify(data));
+            notify('✅ File caricato! Ora scegli il tuo ruolo per continuare', 'success');
+        } catch (err) {
+            notify('❌ File non valido', 'err');
+        }
+    };
+    reader.readAsText(file);
+}
+
+// ========== ANTI-SGAMO ==========
+
+function roundAntiSgamo(amount) {
+    // Arrotonda alla decina più vicina
+    return Math.round(amount / 10) * 10;
+}
+
+function applyAntiSgamo() {
+    if (!State.calc) return notify('Calcola prima una scommessa', 'err');
+    
+    const originalA = State.calc.investA;
+    const originalB = State.calc.investB;
+    
+    // Arrotonda
+    const roundedA = roundAntiSgamo(originalA);
+    const roundedB = roundAntiSgamo(originalB);
+    
+    // Ricalcola mantenendo proporzioni
+    const ratioA = State.calc.returnA / State.calc.investA;
+    const ratioB = State.calc.returnB / State.calc.investB;
+    
+    State.calc.investA = roundedA;
+    State.calc.investB = roundedB;
+    State.calc.returnA = roundedA * ratioA;
+    State.calc.returnB = roundedB * ratioB;
+    State.calc.profitA = State.calc.returnA - roundedA;
+    State.calc.profitB = State.calc.returnB - roundedB;
+    
+    // Aggiorna display
+    updateCalcDisplay();
+    
+    notify(`🎭 Anti-Sgamo applicato: A ${originalA.toFixed(2)}→${roundedA}, B ${originalB.toFixed(2)}→${roundedB}`, 'success');
+}
+
+function updateCalcDisplay() {
+    // Aggiorna i risultati nel calcolatore
+    document.getElementById('resA').innerHTML = `
+        <h4>A</h4>
+        <div>Investimento: ${fmt(State.calc.investA)}</div>
+        <div>Rientro: ${fmt(State.calc.returnA)}</div>
+        <div style="color:var(--p);margin-top:10px"><b>Profitto: ${fmt(State.calc.profitA)}</b></div>
+    `;
+    document.getElementById('resB').innerHTML = `
+        <h4>B</h4>
+        <div>Investimento: ${fmt(State.calc.investB)}</div>
+        <div>Rientro: ${fmt(State.calc.returnB)}</div>
+        <div style="color:var(--p);margin-top:10px"><b>Profitto: ${fmt(State.calc.profitB)}</b></div>
+    `;
+    document.getElementById('totProfit').textContent = fmt(State.calc.profitA + State.calc.profitB);
+}
+
+// ========== BOOKMAKERS ==========
+
+function showBookmakers() {
+    const container = document.getElementById('bookmakerList');
+    if (!container) return;
+    
+    const bms = State.data?.bookmakers || [];
+    const stats = State.data?.bookmakerStats || {};
+    
+    container.innerHTML = bms.map(bm => {
+        const s = stats[bm.id] || { A: { invested: 0, won: 0 }, B: { invested: 0, won: 0 } };
+        const profitA = s.A.won - s.A.invested;
+        const profitB = s.B.won - s.B.invested;
+        
+        return `
+            <div class="bookmaker-card">
+                <h4>${bm.logo} ${bm.name}</h4>
+                <div class="bm-stats">
+                    <div><b>A:</b> Inv. ${fmt(s.A.invested)} | Win ${fmt(s.A.won)} | <span class="${profitA >= 0 ? 'pos' : 'neg'}">${fmt(profitA)}</span></div>
+                    <div><b>B:</b> Inv. ${fmt(s.B.invested)} | Win ${fmt(s.B.won)} | <span class="${profitB >= 0 ? 'pos' : 'neg'}">${fmt(profitB)}</span></div>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+function addBookmaker() {
+    const name = prompt('Nome bookmaker:');
+    if (!name) return;
+    
+    const logo = prompt('Logo (3 lettere max, es: B365):') || name.substring(0, 3).toUpperCase();
+    
+    State.ws.send(JSON.stringify({
+        type: 'ADD_BOOKMAKER',
+        name: name,
+        logo: logo
+    }));
+    
+    notify('Bookmaker aggiunto!', 'success');
+}
+
+// Helper
+function fmt(n) {
+    return '€' + Math.abs(n || 0).toFixed(2);
+}
+
+function notify(msg, type) {
+    const div = document.createElement('div');
+    div.className = 'notification ' + type;
+    div.innerHTML = `<b>${type === 'err' ? '❌' : '✅'}</b> ${msg}`;
+    document.getElementById('notifs').appendChild(div);
+    setTimeout(() => div.remove(), 5000);
+}
+
 // Init
 document.addEventListener('DOMContentLoaded', () => {
     renderBets(2);
 
 });
+
