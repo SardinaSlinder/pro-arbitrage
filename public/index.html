@@ -192,86 +192,55 @@
             </section>
 
             <!-- CALCOLATORE -->
-            <section class="section" id="calcolatore">
-                <h2>🧮 Calcolatore Surebet</h2>
-                
-                <div class="calc-container">
-                    <div class="calc-left">
-                        <div class="card">
-                            <h3>Configurazione</h3>
-                            
-                            <div class="form-group">
-                                <label>Numero Esiti</label>
-                                <div class="btn-group">
-                                    <button class="btn-toggle active" onclick="setBetCount(2)">2 Esiti</button>
-                                    <button class="btn-toggle" onclick="setBetCount(3)">3 Esiti</button>
-                                </div>
-                            </div>
-
-                            <div class="form-group">
-                                <label>Capitale Totale (€)</label>
-                                <input type="number" id="calcTotal" placeholder="1000" step="0.01">
-                            </div>
-
-                            <div class="form-group">
-                                <label>Modalità Divisione</label>
-                                <select id="splitMode" onchange="updateSplitMode()">
-                                    <option value="equal">50% / 50%</option>
-                                    <option value="proportional">Proporzionale al capitale</option>
-                                    <option value="custom">Personalizzata</option>
-                                </select>
-                            </div>
-
-                            <div class="form-group" id="customSplitBox" style="display: none;">
-                                <label>Percentuale A: <span id="splitVal">50%</span></label>
-                                <input type="range" min="0" max="100" value="50" 
-                                    oninput="document.getElementById('splitVal').textContent = this.value + '%'">
-                            </div>
-                        </div>
-
-                        <div class="card">
-                            <h3>Quote</h3>
-                            <div id="betInputs"></div>
-                        </div>
-
-                        <button class="btn btn-primary btn-large" onclick="calculate()">
-                            🚀 Calcola
-                        </button>
-                    </div>
-
-                    <div class="calc-right">
-                        <div class="card results">
-                            <h3>📊 Risultati</h3>
-                            
-                            <div class="result-box" id="resA">
-                                <h4>🟢 Giocatore A</h4>
-                                <p class="empty">Inserisci dati e calcola</p>
-                            </div>
-
-                            <div class="result-box" id="resB">
-                                <h4>🔵 Giocatore B</h4>
-                                <p class="empty">Inserisci dati e calcola</p>
-                            </div>
-
-                            <div class="result-total">
-                                <div>Profitto Totale: <b id="totProfit">€0.00</b></div>
-                                <div>ROI: <b id="totRoi">0%</b></div>
-                            </div>
-
-                            <button class="btn btn-secondary btn-large" onclick="applyAntiSgamo()" id="btnAntiSgamo" style="display: none;">
-                                🎭 Anti-Sgamo
-                            </button>
-                            <p class="anti-sgamo-text" id="textAntiSgamo" style="display: none;">
-                                Arrotonda a decine: 123€→120€, 127€→130€
-                            </p>
-
-                            <button class="btn btn-primary btn-large" onclick="saveCalculation()" id="btnSaveCalc" disabled>
-                                💾 Salva Operazione
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </section>
+            <div id="calculator" class="section">
+    <h2>🧮 Calcolatore Surebet</h2>
+    
+    <div class="card">
+        <h3>Dati Operazione</h3>
+        
+        <div class="form-row">
+            <div class="form-group">
+                <label>💰 Capitale Totale Disponibile (€)</label>
+                <input type="number" id="totalCapital" placeholder="1000" step="0.01">
+            </div>
+        </div>
+        
+        <div class="form-row two-cols">
+            <div class="form-group">
+                <label>📊 Quota Bookmaker A</label>
+                <input type="number" id="quotaA" placeholder="2.40" step="0.01">
+            </div>
+            <div class="form-group">
+                <label>📊 Quota Bookmaker B</label>
+                <input type="number" id="quotaB" placeholder="2.60" step="0.01">
+            </div>
+        </div>
+        
+        <div class="form-row two-cols">
+            <div class="form-group">
+                <label>💵 Saldo Attuale Giocatore A (€)</label>
+                <input type="number" id="balanceA" placeholder="600" step="0.01">
+            </div>
+            <div class="form-group">
+                <label>💵 Saldo Attuale Giocatore B (€)</label>
+                <input type="number" id="balanceB" placeholder="400" step="0.01">
+            </div>
+        </div>
+        
+        <button class="btn btn-primary btn-large" onclick="calculate()">
+            🚀 CALCOLA
+        </button>
+        
+        <button class="btn btn-secondary" onclick="applyAntiSgamo()" id="btnAntiSgamo" style="display:none;margin-top:10px;">
+            🎭 Applica Anti-Sgamo
+        </button>
+    </div>
+    
+    <!-- Risultati -->
+    <div id="calcResults" class="card" style="display:none;">
+        <!-- Popolato da JavaScript -->
+    </div>
+</div>
 
             <!-- BOOKMAKERS -->
             <section class="section" id="bookmakers">
@@ -451,3 +420,4 @@
     <script src="/js/app.js"></script>
 </body>
 </html>
+
