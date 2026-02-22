@@ -274,151 +274,233 @@ function confirmSettlement() {
     State.ws.send(JSON.stringify({ type: 'CONFIRM_SETTLEMENT' }));
 }
 
-// ========== CALCOLATORE ==========
-
-let numBets = 2;
-
-function setBetCount(n) {
-    numBets = n;
-    document.querySelectorAll('.btn-toggle').forEach((b, i) => {
-        b.classList.toggle('active', i === (n === 2 ? 0 : 1));
-    });
-    renderBetInputs();
-}
-
-function renderBetInputs() {
-    const c = document.getElementById('betInputs');
-    if (!c) return;
-    c.innerHTML = '';
-    for (let i = 0; i < numBets; i++) {
-        c.innerHTML += `
-            <div class="bet-input-row">
-                <input type="text" placeholder="Esito ${i+1}" id="n${i}">
-                <input type="number" placeholder="Quota" step="0.01" id="q${i}">
-            </div>
-        `;
-    }
-}
-
-function updateSplitMode() {
-    const m = document.getElementById('splitMode');
-    if (!m) return;
-    const customBox = document.getElementById('customSplitBox');
-    if (customBox) {
-        customBox.style.display = m.value === 'custom' ? 'block' : 'none';
-    }
-}
+// ========== CALCOLATORE SUREBET SEMPLIFICATO ==========
 
 function calculate() {
-    const total = parseFloat(document.getElementById('calcTotal').value) || 0;
-    if (!total) return notify('Inserisci capitale', 'error');
+    // INPUT UTENTE
+    const totalCapital = parseFloat(document.getElementById('totalCapital').value) || 0;
+    const quotaA = parseFloat(document.getElementById('quotaA').value) || 0;
+    const quotaB = parseFloat(document.getElementById('quotaB').value) || 0;
+    const balanceA = parseFloat(document.getElementById('balanceA').value) || 0;
+    const balanceB = parseFloat(document.getElementById('balanceB').value) || 0;
     
-    const quotes = [];
-    for (let i = 0; i < numBets; i++) {
-        const q = parseFloat(document.getElementById(`q${i}`).value);
-        if (!q) return notify(`Quota mancante esito ${i+1}`, 'error');
-        quotes.push(q);
+    // VALIDAZIONE
+    if (!totalCapital || !quotaA || !quotaB) {
+        return notify('Inserisci capitale totale e entrambe le quote', 'error');
+    }
+    if (quotaA <= 1 || quotaB <= 1) {
+        return notify('Le quote devono essere maggiori di 1.00', 'error');
     }
     
-    const stakes = quotes.map(q => total / q);
-    const totStake = stakes.reduce((a, b) => a + b, 0);
-    const returns = stakes.map((s, i) => s * quotes[i]);
-    const profit = returns[0] - totStake;
-    const roi = (profit / totStake) * 100;
+    // 1. VERIFICA SE È SUREBET
+    const margin = (1 / quotaA) + (1 / quotaB);
+    const isSurebet = margin < 1;
     
-    const mode = document.getElementById('splitMode').value;
-    let splitA = 0.5;
-    if (mode === 'proportional') {
-        const balA = State.data.players.A.balance || 1;
-        const balB = State.data.players.B.balance || 1;
-        splitA = balA / (balA + balB);
-    } else if (mode === 'custom') {
-        const customInput = document.querySelector('#customSplitBox input');
-        if (customInput) splitA = parseInt(customInput.value) / 100;
+    if (!isSurebet) {
+        notify('⚠️ Attenzione: Non è una surebet! Margin: ' + (margin * 100).toFixed(2) + '%', 'warning');
     }
     
+    // 2. CALCOLO PUNTATE OTTIMALI (teoriche)
+    // Per coprire entrambi: stakeA × quotaA = stakeB × quotaB = stesso ritorno
+    // stakeA = totale / quotaA, stakeB = totale / quotaB
+    const theoreticalStakeA = totalCapital / quotaA;
+    const theoreticalStakeB = totalCapital / quotaB;
+    const totalTheoretical = theoreticalStakeA + theoreticalStakeB;
+    
+    // 3. PROFITTO TEORICO
+    const returnAmount = totalCapital; // Ritorno = capitale iniziale (per definizione)
+    const theoreticalProfit = returnAmount - totalTheoretical;
+    const theoreticalROI = (theoreticalProfit / totalTheoretical) * 100;
+    
+    // 4. VINCOLI REALI (quanto possiamo puntare davvero?)
+    // Rapporto ottimale: stakeA/stakeB = quotaB/quotaA
+    const optimalRatio = quotaB / quotaA; // Quanto deve essere A rispetto a B
+    
+    // Se A ha balanceA, quanto può puntare B per mantenere il rapporto?
+    // stakeB = stakeA / optimalRatio
+    const maxStakeA_fromB = balanceB * optimalRatio; // Quanto può puntare A dato il limite di B
+    
+    const actualStakeA = Math.min(balanceA, totalCapital / quotaA, maxStakeA_fromB);
+    const actualStakeB = actualStakeA / optimalRatio;
+    
+    // 5. RICALCOLO CON VINCOLI REALI
+    const actualTotalInvested = actualStakeA + actualStakeB;
+    const actualReturn = actualStakeA * quotaA; // = actualStakeB * quotaB
+    const actualProfit = actualReturn - actualTotalInvested;
+    const actualROI = (actualProfit / actualTotalInvested) * 100;
+    
+    // 6. CHI PAGA COSA?
+    // A paga la sua parte della puntata A, B paga la sua parte della puntata B
+    // MA in proporzione ai loro saldi rispetto al capitale totale
+    
+    const shareA = balanceA / (balanceA + balanceB); // % di A sul totale
+    const shareB = balanceB / (balanceA + balanceB); // % di B sul totale
+    
+    // Ognuno contribuisce alla puntata in base alla sua % di proprietà del capitale
+    const contributionA = actualStakeA; // A paga tutta la puntata A
+    const contributionB = actualStakeB; // B paga tutta la puntata B
+    
+    // 7. PROFITTO DIVISO
+    const profitA = actualProfit * shareA;
+    const profitB = actualProfit * shareB;
+    
+    // SALVA STATO
     State.calc = {
-        investA: totStake * splitA,
-        investB: totStake * (1 - splitA),
-        returnA: returns[0] * splitA,
-        returnB: returns[0] * (1 - splitA),
-        profitA: profit * splitA,
-        profitB: profit * (1 - splitA),
-        ratioA: returns[0] / (totStake * splitA)
+        stakeA: actualStakeA,
+        stakeB: actualStakeB,
+        totalInvested: actualTotalInvested,
+        returnAmount: actualReturn,
+        totalProfit: actualProfit,
+        roi: actualROI,
+        profitA: profitA,
+        profitB: profitB,
+        shareA: shareA,
+        shareB: shareB,
+        contributionA: contributionA,
+        contributionB: contributionB,
+        quotaA: quotaA,
+        quotaB: quotaB
     };
     
-    document.getElementById('resA').innerHTML = `
-        <h4>🟢 Giocatore A</h4>
-        <div>Punta: <b>${fmt(State.calc.investA)}</b></div>
-        <div>Rientra: ${fmt(State.calc.returnA)}</div>
-        <div style="color:var(--primary);margin-top:10px"><b>Profitto: ${fmt(State.calc.profitA)}</b></div>
+    // MOSTRA RISULTATI
+    displayResults(State.calc, isSurebet, margin);
+}
+
+function displayResults(calc, isSurebet, margin) {
+    const resultsDiv = document.getElementById('calcResults');
+    
+    const statusColor = isSurebet ? 'var(--primary)' : 'var(--warning)';
+    const statusText = isSurebet ? '✅ SUREBET VALIDA' : '⚠️ NON SUREBET';
+    
+    resultsDiv.innerHTML = `
+        <div class="result-status" style="color:${statusColor};font-size:1.2rem;font-weight:bold;margin-bottom:20px;">
+            ${statusText} (Margin: ${(margin * 100).toFixed(2)}%)
+        </div>
+        
+        <div class="result-grid">
+            <div class="result-box player-a">
+                <h4>🟢 GIOCATORE A</h4>
+                <div class="result-row">
+                    <span>Deve puntare:</span>
+                    <b class="highlight">${fmt(calc.stakeA)}</b>
+                </div>
+                <div class="result-row">
+                    <span>Sul bookmaker A @${calc.quotaA}</span>
+                </div>
+                <div class="result-row">
+                    <span>Proprietà capitale:</span>
+                    <b>${(calc.shareA * 100).toFixed(1)}%</b>
+                </div>
+                <div class="result-row profit">
+                    <span>Profitto netto:</span>
+                    <b class="pos">${fmt(calc.profitA)}</b>
+                </div>
+            </div>
+            
+            <div class="result-box player-b">
+                <h4>🔵 GIOCATORE B</h4>
+                <div class="result-row">
+                    <span>Deve puntare:</span>
+                    <b class="highlight">${fmt(calc.stakeB)}</b>
+                </div>
+                <div class="result-row">
+                    <span>Sul bookmaker B @${calc.quotaB}</span>
+                </div>
+                <div class="result-row">
+                    <span>Proprietà capitale:</span>
+                    <b>${(calc.shareB * 100).toFixed(1)}%</b>
+                </div>
+                <div class="result-row profit">
+                    <span>Profitto netto:</span>
+                    <b class="pos">${fmt(calc.profitB)}</b>
+                </div>
+            </div>
+        </div>
+        
+        <div class="result-summary">
+            <h4>📊 RIEPILOGO OPERAZIONE</h4>
+            <div class="summary-grid">
+                <div>
+                    <span>Totale investito:</span>
+                    <b>${fmt(calc.totalInvested)}</b>
+                </div>
+                <div>
+                    <span>Totale rientro:</span>
+                    <b>${fmt(calc.returnAmount)}</b>
+                </div>
+                <div>
+                    <span>Profitto totale:</span>
+                    <b class="pos">${fmt(calc.totalProfit)}</b>
+                </div>
+                <div>
+                    <span>ROI:</span>
+                    <b class="pos">${calc.roi.toFixed(2)}%</b>
+                </div>
+            </div>
+        </div>
+        
+        <button class="btn btn-primary btn-full" onclick="saveCalculation()" id="btnSaveCalc">
+            💾 Salva e Richiedi Approvazione
+        </button>
     `;
     
-    document.getElementById('resB').innerHTML = `
-        <h4>🔵 Giocatore B</h4>
-        <div>Punta: <b>${fmt(State.calc.investB)}</b></div>
-        <div>Rientra: ${fmt(State.calc.returnB)}</div>
-        <div style="color:var(--primary);margin-top:10px"><b>Profitto: ${fmt(State.calc.profitB)}</b></div>
-    `;
-    
-    document.getElementById('totProfit').textContent = fmt(profit);
-    document.getElementById('totRoi').textContent = roi.toFixed(2) + '%';
-    
-    const btnSave = document.getElementById('btnSaveCalc');
-    if (btnSave) btnSave.disabled = false;
-    
-    const btnAnti = document.getElementById('btnAntiSgamo');
-    if (btnAnti) btnAnti.style.display = 'block';
-    
-    const textAnti = document.getElementById('textAntiSgamo');
-    if (textAnti) textAnti.style.display = 'block';
+    resultsDiv.style.display = 'block';
 }
 
 function applyAntiSgamo() {
-    if (!State.calc) return;
+    if (!State.calc) return notify('Calcola prima!', 'error');
     
-    const origA = State.calc.investA;
-    const origB = State.calc.investB;
+    // Arrotonda a multipli di 5 per sembrare naturale
+    const roundA = Math.round(State.calc.stakeA / 5) * 5;
+    const roundB = Math.round(State.calc.stakeB / 5) * 5;
     
-    const roundA = Math.round(origA / 10) * 10;
-    const roundB = Math.round(origB / 10) * 10;
+    // Ricalcola mantenendo le quote
+    const newReturnA = roundA * State.calc.quotaA;
+    const newReturnB = roundB * State.calc.quotaB;
+    const minReturn = Math.min(newReturnA, newReturnB);
     
-    State.calc.investA = roundA;
-    State.calc.investB = roundB;
-    State.calc.returnA = roundA * State.calc.ratioA;
-    State.calc.returnB = roundB * State.calc.ratioA;
-    State.calc.profitA = State.calc.returnA - roundA;
-    State.calc.profitB = State.calc.returnB - roundB;
+    const newTotalInvested = roundA + roundB;
+    const newProfit = minReturn - newTotalInvested;
+    const newROI = (newProfit / newTotalInvested) * 100;
     
-    document.getElementById('resA').innerHTML = `
-        <h4>🟢 Giocatore A 🎭</h4>
-        <div>Punta: <s style="opacity:0.5">${fmt(origA)}</s> → <b style="color:var(--warning)">${fmt(roundA)}</b></div>
-        <div>Rientra: ${fmt(State.calc.returnA)}</div>
-        <div style="color:var(--primary);margin-top:10px"><b>Profitto: ${fmt(State.calc.profitA)}</b></div>
-    `;
-    document.getElementById('resB').innerHTML = `
-        <h4>🔵 Giocatore B 🎭</h4>
-        <div>Punta: <s style="opacity:0.5">${fmt(origB)}</s> → <b style="color:var(--warning)">${fmt(roundB)}</b></div>
-        <div>Rientra: ${fmt(State.calc.returnB)}</div>
-        <div style="color:var(--primary);margin-top:10px"><b>Profitto: ${fmt(State.calc.profitB)}</b></div>
-    `;
+    State.calc.stakeA = roundA;
+    State.calc.stakeB = roundB;
+    State.calc.totalInvested = newTotalInvested;
+    State.calc.returnAmount = minReturn;
+    State.calc.totalProfit = newProfit;
+    State.calc.roi = newROI;
+    State.calc.profitA = newProfit * State.calc.shareA;
+    State.calc.profitB = newProfit * State.calc.shareB;
     
-    notify(`🎭 Anti-Sgamo applicato`, 'success');
+    displayResults(State.calc, true, 0.95);
+    notify(`🎭 Anti-sgamo: A ${fmt(roundA)}, B ${fmt(roundB)}`, 'success');
 }
 
 function saveCalculation() {
-    if (!State.calc || State.id === 'OBSERVER') return;
+    if (!State.calc || State.id === 'OBSERVER') {
+        return notify('Non puoi salvare', 'error');
+    }
     
     State.ws.send(JSON.stringify({
         type: 'REQUEST_BET',
         betData: {
-            ...State.calc,
-            description: 'Calcolatore',
-            bookmakerA: null,
-            bookmakerB: null
+            description: `Surebet @${State.calc.quotaA} vs @${State.calc.quotaB}`,
+            stakeA: State.calc.stakeA,
+            stakeB: State.calc.stakeB,
+            investA: State.calc.contributionA,
+            investB: State.calc.contributionB,
+            returnA: State.calc.returnAmount * State.calc.shareA,
+            returnB: State.calc.returnAmount * State.calc.shareB,
+            profitA: State.calc.profitA,
+            profitB: State.calc.profitB,
+            totalProfit: State.calc.totalProfit,
+            roi: State.calc.roi,
+            quotaA: State.calc.quotaA,
+            quotaB: State.calc.quotaB
         }
     }));
-    notify('Richiesta inviata per approvazione', 'success');
+    
+    notify('Richiesta inviata! Attendi approvazione...', 'success');
 }
 
 // ========== BOOKMAKERS ==========
@@ -894,3 +976,4 @@ function notify(msg, type) {
 document.addEventListener('DOMContentLoaded', () => {
     renderBetInputs();
 });
+
