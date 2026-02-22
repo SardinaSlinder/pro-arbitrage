@@ -1,11 +1,9 @@
 // ARBITRAGGIO PRO - Client Completo
 
-// Configurazione WebSocket
 const WS_URL = window.location.protocol === 'https:' 
     ? `wss://${window.location.host}` 
     : `ws://${window.location.host}`;
 
-// Stato applicazione
 const State = {
     ws: null,
     id: null,
@@ -16,9 +14,9 @@ const State = {
     soundEnabled: true
 };
 
-// ========== LOGIN A 2 STEP ==========
-
 let tempName = '';
+
+// ========== LOGIN ==========
 
 function goToStep2() {
     tempName = document.getElementById('loginName').value.trim();
@@ -41,7 +39,8 @@ function chooseRole(role) {
     
     State.ws.onopen = () => {
         State.connected = true;
-        document.getElementById('connStatus').classList.add('on');
+        const connStatus = document.getElementById('connStatus');
+        if (connStatus) connStatus.classList.add('on');
         
         State.ws.send(JSON.stringify({
             type: 'CHOOSE_ROLE',
@@ -52,36 +51,56 @@ function chooseRole(role) {
     
     State.ws.onmessage = (event) => {
         const data = JSON.parse(event.data);
+        console.log('Messaggio ricevuto:', data.type, data);
         handleMessage(data);
     };
     
     State.ws.onclose = () => {
         State.connected = false;
-        document.getElementById('connStatus').classList.remove('on');
+        const connStatus = document.getElementById('connStatus');
+        if (connStatus) connStatus.classList.remove('on');
+        notify('Connessione persa', 'warning');
     };
     
     State.ws.onerror = (err) => {
         console.error('WebSocket error:', err);
-        document.getElementById('loginError').textContent = 'Errore di connessione al server';
+        notify('Errore di connessione', 'error');
     };
 }
 
-// ========== GESTIONE MESSAGGI SERVER ==========
+// ========== GESTIONE MESSAGGI ==========
 
 function handleMessage(data) {
     switch(data.type) {
         case 'INIT_STATE':
             State.id = data.playerId;
             State.data = data.state;
+            console.log('Stato iniziale ricevuto, pending:', data.state.pendingApprovals?.length);
             enterApp();
             break;
             
         case 'PLAYER_CONNECTED':
             notify(`${data.playerName} si è connesso`, 'success');
+            if (State.data && State.data.players[data.playerId]) {
+                State.data.players[data.playerId].connected = true;
+                State.data.players[data.playerId].name = data.playerName;
+                updatePlayerStatus(data.playerId, true, data.playerName);
+            }
             break;
             
         case 'PLAYER_DISCONNECTED':
             notify(`Giocatore ${data.playerId} disconnesso`, 'warning');
+            if (State.data && State.data.players[data.playerId]) {
+                State.data.players[data.playerId].connected = false;
+                updatePlayerStatus(data.playerId, false);
+            }
+            break;
+            
+        case 'PLAYER_UPDATED':
+            if (State.data && State.data.players[data.playerId]) {
+                State.data.players[data.playerId].name = data.name;
+                document.getElementById('name' + data.playerId).textContent = data.name;
+            }
             break;
             
         case 'NEW_MESSAGE':
@@ -89,19 +108,29 @@ function handleMessage(data) {
             break;
             
         case 'APPROVAL_REQUIRED':
+            console.log('Nuova approvazione richiesta:', data.approval);
+            // AGGIUNGI alla lista locale
+            if (!State.data.pendingApprovals) State.data.pendingApprovals = [];
+            State.data.pendingApprovals.push(data.approval);
             addApproval(data.approval);
             notify('Nuova richiesta da approvare!', 'warning');
             break;
             
         case 'APPROVAL_RESULT':
+            console.log('Risultato approvazione:', data);
             removeApproval(data.approvalId);
-            notify(data.result === 'approved' ? 'Approvato!' : 'Rifiutato', data.result === 'approved' ? 'success' : 'error');
+            notify(
+                data.result === 'approved' ? '✅ Richiesta approvata!' : '❌ Richiesta rifiutata', 
+                data.result === 'approved' ? 'success' : 'error'
+            );
             break;
             
         case 'BALANCE_UPDATED':
-            State.data.players[data.playerId].balance = data.newBalance;
-            refreshDashboard();
-            notify('Saldo aggiornato', 'success');
+            if (State.data && State.data.players[data.playerId]) {
+                State.data.players[data.playerId].balance = data.newBalance;
+                refreshDashboard();
+                notify(`Saldo ${data.playerId} aggiornato: ${fmt(data.newBalance)}`, 'success');
+            }
             break;
             
         case 'BET_EXECUTED':
@@ -110,15 +139,16 @@ function handleMessage(data) {
             State.data.bookmakerStats = data.bookmakerStats || {};
             refreshDashboard();
             renderHistory();
-            notify('Operazione eseguita!', 'success');
+            notify('Operazione eseguita e approvata!', 'success');
             break;
             
         case 'SETTLEMENT_EXECUTED':
             State.data.players.A.balance = data.newBalances.A;
             State.data.players.B.balance = data.newBalances.B;
             refreshDashboard();
-            notify('Pagamento confermato!', 'success');
-            document.getElementById('settleBox').style.display = 'none';
+            notify('Settlement confermato!', 'success');
+            const settleBox = document.getElementById('settleBox');
+            if (settleBox) settleBox.style.display = 'none';
             break;
             
         case 'BOOKMAKERS_UPDATED':
@@ -135,10 +165,13 @@ function handleMessage(data) {
         case 'ERROR':
             notify(data.message, 'error');
             break;
+            
+        default:
+            console.log('Tipo messaggio sconosciuto:', data.type);
     }
 }
 
-// ========== ENTRA NELL'APP ==========
+// ========== APP ==========
 
 function enterApp() {
     document.getElementById('loginScreen').style.display = 'none';
@@ -148,11 +181,11 @@ function enterApp() {
     document.getElementById('playerBadge').textContent = badgeText;
     
     if (State.data.players.A) {
-        document.getElementById('nameA').textContent = State.data.players.A.name;
+        document.getElementById('nameA').textContent = State.data.players.A.name || 'Giocatore A';
         updatePlayerStatus('A', State.data.players.A.connected);
     }
     if (State.data.players.B) {
-        document.getElementById('nameB').textContent = State.data.players.B.name;
+        document.getElementById('nameB').textContent = State.data.players.B.name || 'Giocatore B';
         updatePlayerStatus('B', State.data.players.B.connected);
     }
     
@@ -182,6 +215,8 @@ function refreshAll() {
 // ========== DASHBOARD ==========
 
 function refreshDashboard() {
+    if (!State.data) return;
+    
     const a = State.data.players.A;
     const b = State.data.players.B;
     
@@ -189,15 +224,17 @@ function refreshDashboard() {
     document.getElementById('invA').textContent = fmt(a.invested);
     document.getElementById('wonA').textContent = fmt(a.won);
     const profA = a.won - a.invested;
-    document.getElementById('profA').textContent = (profA >= 0 ? '+' : '') + fmt(profA);
-    document.getElementById('profA').className = profA >= 0 ? 'pos' : 'neg';
+    const profAEl = document.getElementById('profA');
+    profAEl.textContent = (profA >= 0 ? '+' : '') + fmt(profA);
+    profAEl.className = profA >= 0 ? 'pos' : 'neg';
     
     document.getElementById('balB').textContent = fmt(b.balance);
     document.getElementById('invB').textContent = fmt(b.invested);
     document.getElementById('wonB').textContent = fmt(b.won);
     const profB = b.won - b.invested;
-    document.getElementById('profB').textContent = (profB >= 0 ? '+' : '') + fmt(profB);
-    document.getElementById('profB').className = profB >= 0 ? 'pos' : 'neg';
+    const profBEl = document.getElementById('profB');
+    profBEl.textContent = (profB >= 0 ? '+' : '') + fmt(profB);
+    profBEl.className = profB >= 0 ? 'pos' : 'neg';
 }
 
 function fmt(n) {
@@ -220,14 +257,16 @@ function calculateSettlement() {
     if (Math.abs(diff) < 0.01) {
         txt.innerHTML = '<b style="color:var(--primary)">✅ Conti in pari!</b>';
         amt.style.display = 'none';
-        box.querySelector('.btn') ? box.querySelector('.btn').style.display = 'none' : null;
+        const btn = box.querySelector('.btn');
+        if (btn) btn.style.display = 'none';
     } else {
         const from = diff > 0 ? 'B' : 'A';
         const to = diff > 0 ? 'A' : 'B';
         txt.innerHTML = `Giocatore <b>${from}</b> deve dare a <b>${to}</b>:`;
         amt.textContent = fmt(Math.abs(diff));
         amt.style.display = 'block';
-        if (box.querySelector('.btn')) box.querySelector('.btn').style.display = 'inline-block';
+        const btn = box.querySelector('.btn');
+        if (btn) btn.style.display = 'inline-block';
     }
 }
 
@@ -364,7 +403,7 @@ function applyAntiSgamo() {
         <div style="color:var(--primary);margin-top:10px"><b>Profitto: ${fmt(State.calc.profitB)}</b></div>
     `;
     
-    notify(`🎭 Anti-Sgamo: ${fmt(origA)}→${fmt(roundA)}, ${fmt(origB)}→${fmt(roundB)}`, 'success');
+    notify(`🎭 Anti-Sgamo applicato`, 'success');
 }
 
 function saveCalculation() {
@@ -379,7 +418,7 @@ function saveCalculation() {
             bookmakerB: null
         }
     }));
-    notify('Richiesta inviata', 'success');
+    notify('Richiesta inviata per approvazione', 'success');
 }
 
 // ========== BOOKMAKERS ==========
@@ -487,65 +526,93 @@ function renderHistory() {
 
 // ========== APPROVALS ==========
 
-function addApproval(appr) {
-    if (!State.data.pendingApprovals) State.data.pendingApprovals = [];
-    State.data.pendingApprovals.push(appr);
-    renderApprovals();
+function addApproval(approval) {
+    console.log('Aggiungo approvazione UI:', approval);
     
-    const badge = document.getElementById('badgeApp');
-    const pending = State.data.pendingApprovals.filter(a => !a.status).length;
-    if (badge) {
-        badge.textContent = pending;
-        badge.style.display = pending ? 'block' : 'none';
+    const list = document.getElementById('listApprovals');
+    if (!list) {
+        console.error('Elemento listApprovals non trovato!');
+        return;
     }
+    
+    // Non mostrare le proprie richieste
+    if (approval.requestedBy === State.id) {
+        console.log('Ignoro la mia stessa richiesta');
+        return;
+    }
+    
+    // Rimuovi messaggio "nessuna richiesta" se presente
+    const emptyMsg = list.querySelector('.empty');
+    if (emptyMsg) emptyMsg.remove();
+    
+    const info = approval.type === 'BALANCE_UPDATE' 
+        ? `${approval.targetPlayer}: ${approval.amount > 0 ? '+' : ''}${fmt(approval.amount)}`
+        : `Profitto totale: ${fmt((approval.data?.profitA || 0) + (approval.data?.profitB || 0))}`;
+    
+    const div = document.createElement('div');
+    div.className = 'approval-item';
+    div.id = `approval-${approval.id}`;
+    div.innerHTML = `
+        <h5>${approval.type === 'BALANCE_UPDATE' ? '💰 Modifica Saldo' : '🎲 Nuova Bet'}</h5>
+        <p>Da: ${State.data.players[approval.requestedBy]?.name || 'Giocatore ' + approval.requestedBy}<br>${info}</p>
+        <div class="approval-actions">
+            <button class="btn btn-primary" onclick="respondApproval('${approval.id}', true)">✅ Approva</button>
+            <button class="btn btn-secondary" onclick="respondApproval('${approval.id}', false)">❌ Rifiuta</button>
+        </div>
+    `;
+    
+    list.appendChild(div);
+    
+    // Aggiorna badge
+    updateApprovalBadge();
 }
 
 function removeApproval(id) {
-    State.data.pendingApprovals = State.data.pendingApprovals.filter(a => a.id !== id);
-    renderApprovals();
-    
-    const pending = State.data.pendingApprovals.filter(a => !a.status).length;
-    const badge = document.getElementById('badgeApp');
-    if (badge) {
-        badge.textContent = pending;
-        badge.style.display = pending ? 'block' : 'none';
+    console.log('Rimuovo approvazione:', id);
+    const el = document.getElementById(`approval-${id}`);
+    if (el) {
+        el.remove();
     }
+    
+    // Controlla se rimaste altre pending
+    const remaining = document.querySelectorAll('.approval-item').length;
+    if (remaining === 0) {
+        const list = document.getElementById('listApprovals');
+        if (list) list.innerHTML = '<p class="empty">Nessuna richiesta</p>';
+    }
+    
+    updateApprovalBadge();
 }
 
 function renderApprovals() {
     const list = document.getElementById('listApprovals');
     if (!list) return;
     
-    const pending = (State.data.pendingApprovals || []).filter(a => !a.status);
+    // Pulisci lista
+    list.innerHTML = '';
+    
+    const pending = (State.data.pendingApprovals || []).filter(a => !a.status && a.requestedBy !== State.id);
     
     if (!pending.length) {
         list.innerHTML = '<p class="empty">Nessuna richiesta</p>';
+        updateApprovalBadge();
         return;
     }
     
-    list.innerHTML = pending.map(a => {
-        const mine = a.requestedBy === State.id;
-        const canAct = !mine && State.id !== 'OBSERVER';
-        const info = a.type === 'BALANCE_UPDATE' 
-            ? `${a.targetPlayer}: ${a.amount > 0 ? '+' : ''}${fmt(a.amount)}`
-            : `Profitto: ${fmt((a.data?.profitA || 0) + (a.data?.profitB || 0))}`;
-        
-        return `
-            <div class="approval-item">
-                <h5>${a.type === 'BALANCE_UPDATE' ? '💰 Modifica Saldo' : '🎲 Nuova Bet'}</h5>
-                <p>Da: Giocatore ${a.requestedBy}<br>${info}</p>
-                ${canAct ? `
-                    <div class="approval-actions">
-                        <button class="btn btn-primary" onclick="respondApproval('${a.id}', true)">✅ Approva</button>
-                        <button class="btn btn-secondary" onclick="respondApproval('${a.id}', false)">❌ Rifiuta</button>
-                    </div>
-                ` : '<p style="color:var(--text-muted)">In attesa...</p>'}
-            </div>
-        `;
-    }).join('');
+    pending.forEach(a => addApproval(a));
+}
+
+function updateApprovalBadge() {
+    const badge = document.getElementById('badgeApp');
+    if (!badge) return;
+    
+    const count = document.querySelectorAll('.approval-item').length;
+    badge.textContent = count;
+    badge.style.display = count > 0 ? 'block' : 'none';
 }
 
 function respondApproval(id, approve) {
+    console.log('Rispondo ad approvazione:', id, approve);
     State.ws.send(JSON.stringify({
         type: approve ? 'APPROVE' : 'REJECT',
         approvalId: id
@@ -618,7 +685,7 @@ function openModal(type) {
                 amount: amt
             }));
             closeModal();
-            notify('Richiesta inviata', 'success');
+            notify('Richiesta inviata per approvazione', 'success');
         };
         
     } else if (type === 'bet') {
@@ -669,7 +736,7 @@ function openModal(type) {
                 }
             }));
             closeModal();
-            notify('Richiesta inviata', 'success');
+            notify('Richiesta inviata per approvazione', 'success');
         };
     }
 }
@@ -810,6 +877,7 @@ function toggleSound() {
 // ========== NOTIFICATIONS ==========
 
 function notify(msg, type) {
+    console.log(`[${type}] ${msg}`);
     const div = document.createElement('div');
     div.className = 'notification ' + type;
     const icon = type === 'error' ? '❌' : type === 'warning' ? '⚠️' : '✅';
