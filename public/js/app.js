@@ -26,12 +26,8 @@ function goToStep2() {
         document.getElementById('loginError').textContent = 'Inserisci il tuo nome';
         return;
     }
-    
     document.getElementById('loginStep1').style.display = 'none';
     document.getElementById('loginStep2').style.display = 'block';
-    
-    // Controlla ruoli (simulato, in realtà li controlliamo dopo)
-    updateRoleButtons({ A: false, B: false });
 }
 
 function backToStep1() {
@@ -39,32 +35,14 @@ function backToStep1() {
     document.getElementById('loginStep1').style.display = 'block';
 }
 
-function updateRoleButtons(occupied) {
-    const btnA = document.getElementById('btnA');
-    const btnB = document.getElementById('btnB');
-    const statusA = document.getElementById('statusA');
-    const statusB = document.getElementById('statusB');
-    
-    // Per ora assumiamo entrambi liberi, poi il server ci dirà
-    btnA.disabled = false;
-    btnB.disabled = false;
-    statusA.textContent = 'Libero';
-    statusB.textContent = 'Libero';
-    statusA.className = 'role-status';
-    statusB.className = 'role-status';
-}
-
 function chooseRole(role) {
     State.name = tempName;
-    
-    // Connessione WebSocket
     State.ws = new WebSocket(WS_URL);
     
     State.ws.onopen = () => {
         State.connected = true;
         document.getElementById('connStatus').classList.add('on');
         
-        // Invia scelta ruolo
         State.ws.send(JSON.stringify({
             type: 'CHOOSE_ROLE',
             role: role,
@@ -80,7 +58,6 @@ function chooseRole(role) {
     State.ws.onclose = () => {
         State.connected = false;
         document.getElementById('connStatus').classList.remove('on');
-        // Non ricollegare automaticamente per evitare loop
     };
     
     State.ws.onerror = (err) => {
@@ -100,11 +77,11 @@ function handleMessage(data) {
             break;
             
         case 'PLAYER_CONNECTED':
-            showNotification(`${data.playerName} si è connesso`, 'success');
+            notify(`${data.playerName} si è connesso`, 'success');
             break;
             
         case 'PLAYER_DISCONNECTED':
-            showNotification(`Giocatore ${data.playerId} disconnesso`, 'warning');
+            notify(`Giocatore ${data.playerId} disconnesso`, 'warning');
             break;
             
         case 'NEW_MESSAGE':
@@ -113,45 +90,50 @@ function handleMessage(data) {
             
         case 'APPROVAL_REQUIRED':
             addApproval(data.approval);
-            showNotification('Nuova richiesta da approvare!', 'warning');
+            notify('Nuova richiesta da approvare!', 'warning');
             break;
             
         case 'APPROVAL_RESULT':
-            handleApprovalResult(data);
+            removeApproval(data.approvalId);
+            notify(data.result === 'approved' ? 'Approvato!' : 'Rifiutato', data.result === 'approved' ? 'success' : 'error');
             break;
             
         case 'BALANCE_UPDATED':
-            updateBalance(data.playerId, data.newBalance);
-            showNotification('Saldo aggiornato', 'success');
+            State.data.players[data.playerId].balance = data.newBalance;
+            refreshDashboard();
+            notify('Saldo aggiornato', 'success');
             break;
             
         case 'BET_EXECUTED':
             State.data.players = data.players;
             State.data.operations.push(data.bet);
+            State.data.bookmakerStats = data.bookmakerStats || {};
             refreshDashboard();
-            showNotification('Operazione eseguita!', 'success');
+            renderHistory();
+            notify('Operazione eseguita!', 'success');
             break;
             
         case 'SETTLEMENT_EXECUTED':
             State.data.players.A.balance = data.newBalances.A;
             State.data.players.B.balance = data.newBalances.B;
             refreshDashboard();
-            showNotification('Pagamento confermato!', 'success');
+            notify('Pagamento confermato!', 'success');
             document.getElementById('settleBox').style.display = 'none';
-            break;
-            
-        case 'DATA_IMPORTED':
-            State.data = data.state;
-            refreshDashboard();
-            showNotification('Dati importati! Ricarica per vedere tutto', 'success');
             break;
             
         case 'BOOKMAKERS_UPDATED':
             State.data.bookmakers = data.bookmakers;
+            renderBookmakers();
+            break;
+            
+        case 'DATA_IMPORTED':
+            State.data = data.state;
+            refreshAll();
+            notify('Dati importati!', 'success');
             break;
             
         case 'ERROR':
-            showNotification(data.message, 'error');
+            notify(data.message, 'error');
             break;
     }
 }
@@ -162,23 +144,39 @@ function enterApp() {
     document.getElementById('loginScreen').style.display = 'none';
     document.getElementById('mainApp').style.display = 'grid';
     
-    // Imposta badge
     const badgeText = State.id === 'OBSERVER' ? 'Osservatore' : `Giocatore ${State.id}`;
     document.getElementById('playerBadge').textContent = badgeText;
     
-    // Imposta nomi
     if (State.data.players.A) {
         document.getElementById('nameA').textContent = State.data.players.A.name;
+        updatePlayerStatus('A', State.data.players.A.connected);
     }
     if (State.data.players.B) {
         document.getElementById('nameB').textContent = State.data.players.B.name;
+        updatePlayerStatus('B', State.data.players.B.connected);
     }
     
-    // Inizializza
+    refreshAll();
+}
+
+function updatePlayerStatus(id, connected, name) {
+    const el = document.getElementById('status' + id);
+    if (el) {
+        el.textContent = connected ? '🟢 Online' : '⚫ Offline';
+        el.style.color = connected ? 'var(--primary)' : 'var(--text-muted)';
+    }
+    if (name && State.data.players[id]) {
+        State.data.players[id].name = name;
+        document.getElementById('name' + id).textContent = name;
+    }
+}
+
+function refreshAll() {
     refreshDashboard();
     renderHistory();
     renderApprovals();
-    initChat();
+    renderBookmakers();
+    renderBookmakerStats();
 }
 
 // ========== DASHBOARD ==========
@@ -187,290 +185,481 @@ function refreshDashboard() {
     const a = State.data.players.A;
     const b = State.data.players.B;
     
-    // Giocatore A
-    document.getElementById('balA').textContent = formatMoney(a.balance);
-    document.getElementById('invA').textContent = formatMoney(a.invested);
-    document.getElementById('wonA').textContent = formatMoney(a.won);
+    document.getElementById('balA').textContent = fmt(a.balance);
+    document.getElementById('invA').textContent = fmt(a.invested);
+    document.getElementById('wonA').textContent = fmt(a.won);
     const profA = a.won - a.invested;
-    document.getElementById('profA').textContent = (profA >= 0 ? '+' : '') + formatMoney(profA);
+    document.getElementById('profA').textContent = (profA >= 0 ? '+' : '') + fmt(profA);
     document.getElementById('profA').className = profA >= 0 ? 'pos' : 'neg';
-    document.getElementById('statusA').textContent = a.connected ? '🟢 Online' : '⚫ Offline';
     
-    // Giocatore B
-    document.getElementById('balB').textContent = formatMoney(b.balance);
-    document.getElementById('invB').textContent = formatMoney(b.invested);
-    document.getElementById('wonB').textContent = formatMoney(b.won);
+    document.getElementById('balB').textContent = fmt(b.balance);
+    document.getElementById('invB').textContent = fmt(b.invested);
+    document.getElementById('wonB').textContent = fmt(b.won);
     const profB = b.won - b.invested;
-    document.getElementById('profB').textContent = (profB >= 0 ? '+' : '') + formatMoney(profB);
+    document.getElementById('profB').textContent = (profB >= 0 ? '+' : '') + fmt(profB);
     document.getElementById('profB').className = profB >= 0 ? 'pos' : 'neg';
-    document.getElementById('statusB').textContent = b.connected ? '🟢 Online' : '⚫ Offline';
-    
-    // Ultimo aggiornamento
-    const now = new Date();
-    document.getElementById('lastUpdate').textContent = now.toLocaleTimeString();
 }
 
-function formatMoney(amount) {
-    return '€' + Math.abs(amount || 0).toFixed(2);
-}
-
-function updateBalance(playerId, newBalance) {
-    State.data.players[playerId].balance = newBalance;
-    refreshDashboard();
+function fmt(n) {
+    return '€' + Math.abs(n || 0).toFixed(2);
 }
 
 // ========== SETTLEMENT ==========
 
-function settlement() {
+function calculateSettlement() {
     const a = State.data.players.A.balance;
     const b = State.data.players.B.balance;
-    const total = a + b;
-    const half = total / 2;
-    const diff = a - half;
+    const diff = a - (a + b) / 2;
     
     const box = document.getElementById('settleBox');
-    const text = document.getElementById('settleText');
+    const txt = document.getElementById('settleText');
     const amt = document.getElementById('settleAmount');
     
     box.style.display = 'block';
     
     if (Math.abs(diff) < 0.01) {
-        text.innerHTML = '<b style="color:var(--p)">✅ I conti sono in pari!</b>';
+        txt.innerHTML = '<b style="color:var(--primary)">✅ Conti in pari!</b>';
         amt.style.display = 'none';
-        box.querySelector('.btn').style.display = 'none';
+        box.querySelector('.btn') ? box.querySelector('.btn').style.display = 'none' : null;
     } else {
         const from = diff > 0 ? 'B' : 'A';
         const to = diff > 0 ? 'A' : 'B';
-        text.innerHTML = `Giocatore <b>${from}</b> deve dare a <b>${to}</b>:`;
-        amt.textContent = formatMoney(Math.abs(diff));
+        txt.innerHTML = `Giocatore <b>${from}</b> deve dare a <b>${to}</b>:`;
+        amt.textContent = fmt(Math.abs(diff));
         amt.style.display = 'block';
-        box.querySelector('.btn').style.display = 'inline-flex';
+        if (box.querySelector('.btn')) box.querySelector('.btn').style.display = 'inline-block';
     }
 }
 
-function confirmSettle() {
-    if (State.ws && State.connected) {
-        State.ws.send(JSON.stringify({ type: 'CONFIRM_SETTLEMENT' }));
-    }
+function confirmSettlement() {
+    State.ws.send(JSON.stringify({ type: 'CONFIRM_SETTLEMENT' }));
 }
 
 // ========== CALCOLATORE ==========
 
 let numBets = 2;
 
-function setBets(n) {
+function setBetCount(n) {
     numBets = n;
-    document.querySelectorAll('.r-btn').forEach((btn, i) => {
-        btn.classList.toggle('active', i === (n === 2 ? 0 : 1));
+    document.querySelectorAll('.btn-toggle').forEach((b, i) => {
+        b.classList.toggle('active', i === (n === 2 ? 0 : 1));
     });
     renderBetInputs();
 }
 
 function renderBetInputs() {
-    const container = document.getElementById('betsContainer');
-    container.innerHTML = '';
-    
+    const c = document.getElementById('betInputs');
+    if (!c) return;
+    c.innerHTML = '';
     for (let i = 0; i < numBets; i++) {
-        const div = document.createElement('div');
-        div.className = 'bet-row';
-        div.innerHTML = `
-            <input type="text" placeholder="Esito ${i+1}" id="n${i}">
-            <input type="number" placeholder="Quota" step="0.01" id="q${i}">
+        c.innerHTML += `
+            <div class="bet-input-row">
+                <input type="text" placeholder="Esito ${i+1}" id="n${i}">
+                <input type="number" placeholder="Quota" step="0.01" id="q${i}">
+            </div>
         `;
-        container.appendChild(div);
     }
 }
 
-function splitChange() {
-    const mode = document.getElementById('splitMode').value;
-    document.getElementById('customSplit').style.display = mode === 'custom' ? 'block' : 'none';
+function updateSplitMode() {
+    const m = document.getElementById('splitMode');
+    if (!m) return;
+    const customBox = document.getElementById('customSplitBox');
+    if (customBox) {
+        customBox.style.display = m.value === 'custom' ? 'block' : 'none';
+    }
 }
 
 function calculate() {
-    const total = parseFloat(document.getElementById('capTotal').value) || 0;
-    if (!total) {
-        showNotification('Inserisci il capitale totale', 'error');
-        return;
-    }
+    const total = parseFloat(document.getElementById('calcTotal').value) || 0;
+    if (!total) return notify('Inserisci capitale', 'error');
     
-    // Raccogli quote
     const quotes = [];
     for (let i = 0; i < numBets; i++) {
         const q = parseFloat(document.getElementById(`q${i}`).value);
-        if (!q) {
-            showNotification(`Inserisci quota esito ${i+1}`, 'error');
-            return;
-        }
+        if (!q) return notify(`Quota mancante esito ${i+1}`, 'error');
         quotes.push(q);
     }
     
-    // Calcolo surebet
     const stakes = quotes.map(q => total / q);
-    const totalStake = stakes.reduce((a, b) => a + b, 0);
+    const totStake = stakes.reduce((a, b) => a + b, 0);
     const returns = stakes.map((s, i) => s * quotes[i]);
-    const profit = returns[0] - totalStake;
-    const roi = (profit / totalStake) * 100;
+    const profit = returns[0] - totStake;
+    const roi = (profit / totStake) * 100;
     
-    // Divisione
     const mode = document.getElementById('splitMode').value;
     let splitA = 0.5;
-    
-    if (mode === 'prop') {
+    if (mode === 'proportional') {
         const balA = State.data.players.A.balance || 1;
         const balB = State.data.players.B.balance || 1;
         splitA = balA / (balA + balB);
     } else if (mode === 'custom') {
-        splitA = parseInt(document.querySelector('input[type=range]').value) / 100;
+        const customInput = document.querySelector('#customSplitBox input');
+        if (customInput) splitA = parseInt(customInput.value) / 100;
     }
     
-    const splitB = 1 - splitA;
-    
-    // Salva calcolo
     State.calc = {
-        investA: totalStake * splitA,
-        investB: totalStake * splitB,
+        investA: totStake * splitA,
+        investB: totStake * (1 - splitA),
         returnA: returns[0] * splitA,
-        returnB: returns[0] * splitB,
+        returnB: returns[0] * (1 - splitA),
         profitA: profit * splitA,
-        profitB: profit * splitB
+        profitB: profit * (1 - splitA),
+        ratioA: returns[0] / (totStake * splitA)
     };
     
-    // Mostra risultati
     document.getElementById('resA').innerHTML = `
-        <h4>A</h4>
-        <div>Punta: ${formatMoney(State.calc.investA)}</div>
-        <div>Rientra: ${formatMoney(State.calc.returnA)}</div>
-        <div style="color:var(--p);margin-top:10px"><b>Profitto: ${formatMoney(State.calc.profitA)}</b></div>
+        <h4>🟢 Giocatore A</h4>
+        <div>Punta: <b>${fmt(State.calc.investA)}</b></div>
+        <div>Rientra: ${fmt(State.calc.returnA)}</div>
+        <div style="color:var(--primary);margin-top:10px"><b>Profitto: ${fmt(State.calc.profitA)}</b></div>
     `;
     
     document.getElementById('resB').innerHTML = `
-        <h4>B</h4>
-        <div>Punta: ${formatMoney(State.calc.investB)}</div>
-        <div>Rientra: ${formatMoney(State.calc.returnB)}</div>
-        <div style="color:var(--p);margin-top:10px"><b>Profitto: ${formatMoney(State.calc.profitB)}</b></div>
+        <h4>🔵 Giocatore B</h4>
+        <div>Punta: <b>${fmt(State.calc.investB)}</b></div>
+        <div>Rientra: ${fmt(State.calc.returnB)}</div>
+        <div style="color:var(--primary);margin-top:10px"><b>Profitto: ${fmt(State.calc.profitB)}</b></div>
     `;
     
-    document.getElementById('totProfit').textContent = formatMoney(profit);
+    document.getElementById('totProfit').textContent = fmt(profit);
     document.getElementById('totRoi').textContent = roi.toFixed(2) + '%';
-    document.getElementById('btnSave').disabled = false;
     
-    // Mostra anti-sgamo
-    document.getElementById('btnAntiSgamo').style.display = 'block';
-    document.getElementById('infoAntiSgamo').style.display = 'block';
-}
-
-function saveCalc() {
-    if (!State.calc || State.id === 'OBSERVER') {
-        showNotification('Non puoi salvare', 'error');
-        return;
-    }
+    const btnSave = document.getElementById('btnSaveCalc');
+    if (btnSave) btnSave.disabled = false;
     
-    State.ws.send(JSON.stringify({
-        type: 'REQUEST_BET',
-        betData: State.calc
-    }));
+    const btnAnti = document.getElementById('btnAntiSgamo');
+    if (btnAnti) btnAnti.style.display = 'block';
     
-    showNotification('Richiesta inviata per approvazione', 'success');
-}
-
-// ========== ANTI-SGAMO ==========
-
-function roundAntiSgamo(amount) {
-    return Math.round(amount / 10) * 10;
+    const textAnti = document.getElementById('textAntiSgamo');
+    if (textAnti) textAnti.style.display = 'block';
 }
 
 function applyAntiSgamo() {
-    if (!State.calc) return showNotification('Calcola prima', 'error');
+    if (!State.calc) return;
     
     const origA = State.calc.investA;
     const origB = State.calc.investB;
     
-    // Arrotonda
-    const roundA = roundAntiSgamo(origA);
-    const roundB = roundAntiSgamo(origB);
-    
-    // Ricalcola mantenendo quote
-    const ratioA = State.calc.returnA / State.calc.investA;
-    const ratioB = State.calc.returnB / State.calc.investB;
+    const roundA = Math.round(origA / 10) * 10;
+    const roundB = Math.round(origB / 10) * 10;
     
     State.calc.investA = roundA;
     State.calc.investB = roundB;
-    State.calc.returnA = roundA * ratioA;
-    State.calc.returnB = roundB * ratioB;
+    State.calc.returnA = roundA * State.calc.ratioA;
+    State.calc.returnB = roundB * State.calc.ratioA;
     State.calc.profitA = State.calc.returnA - roundA;
     State.calc.profitB = State.calc.returnB - roundB;
     
-    // Aggiorna display
     document.getElementById('resA').innerHTML = `
-        <h4>A 🎭</h4>
-        <div>Punta: <s>${formatMoney(origA)}</s> → <b>${formatMoney(roundA)}</b></div>
-        <div>Rientra: ${formatMoney(State.calc.returnA)}</div>
-        <div style="color:var(--p);margin-top:10px"><b>Profitto: ${formatMoney(State.calc.profitA)}</b></div>
+        <h4>🟢 Giocatore A 🎭</h4>
+        <div>Punta: <s style="opacity:0.5">${fmt(origA)}</s> → <b style="color:var(--warning)">${fmt(roundA)}</b></div>
+        <div>Rientra: ${fmt(State.calc.returnA)}</div>
+        <div style="color:var(--primary);margin-top:10px"><b>Profitto: ${fmt(State.calc.profitA)}</b></div>
     `;
     document.getElementById('resB').innerHTML = `
-        <h4>B 🎭</h4>
-        <div>Punta: <s>${formatMoney(origB)}</s> → <b>${formatMoney(roundB)}</b></div>
-        <div>Rientra: ${formatMoney(State.calc.returnB)}</div>
-        <div style="color:var(--p);margin-top:10px"><b>Profitto: ${formatMoney(State.calc.profitB)}</b></div>
+        <h4>🔵 Giocatore B 🎭</h4>
+        <div>Punta: <s style="opacity:0.5">${fmt(origB)}</s> → <b style="color:var(--warning)">${fmt(roundB)}</b></div>
+        <div>Rientra: ${fmt(State.calc.returnB)}</div>
+        <div style="color:var(--primary);margin-top:10px"><b>Profitto: ${fmt(State.calc.profitB)}</b></div>
     `;
     
-    showNotification(`Anti-Sgamo: ${formatMoney(origA)}→${formatMoney(roundA)}, ${formatMoney(origB)}→${formatMoney(roundB)}`, 'success');
+    notify(`🎭 Anti-Sgamo: ${fmt(origA)}→${fmt(roundA)}, ${fmt(origB)}→${fmt(roundB)}`, 'success');
+}
+
+function saveCalculation() {
+    if (!State.calc || State.id === 'OBSERVER') return;
+    
+    State.ws.send(JSON.stringify({
+        type: 'REQUEST_BET',
+        betData: {
+            ...State.calc,
+            description: 'Calcolatore',
+            bookmakerA: null,
+            bookmakerB: null
+        }
+    }));
+    notify('Richiesta inviata', 'success');
+}
+
+// ========== BOOKMAKERS ==========
+
+function renderBookmakers() {
+    const list = document.getElementById('bmList');
+    if (!list) return;
+    
+    const bms = State.data.bookmakers || [];
+    list.innerHTML = bms.map(bm => `
+        <div class="bm-item">
+            <h4>${bm.name}</h4>
+            <p style="color:var(--text-muted);font-size:0.85rem">ID: ${bm.id}</p>
+        </div>
+    `).join('');
+}
+
+function renderBookmakerStats() {
+    const grid = document.getElementById('bmStats');
+    if (!grid) return;
+    
+    const stats = State.data.bookmakerStats || {};
+    const bms = State.data.bookmakers || [];
+    
+    if (!Object.keys(stats).length) {
+        grid.innerHTML = '<p style="color:var(--text-muted)">Nessuna statistica disponibile</p>';
+        return;
+    }
+    
+    grid.innerHTML = bms.filter(bm => stats[bm.id]).map(bm => {
+        const s = stats[bm.id];
+        const profA = (s.A?.won || 0) - (s.A?.invested || 0);
+        const profB = (s.B?.won || 0) - (s.B?.invested || 0);
+        
+        return `
+            <div class="bm-stat-card">
+                <h4>${bm.name}</h4>
+                <div class="bm-stat-row">
+                    <span>A - Investito:</span>
+                    <b>${fmt(s.A?.invested || 0)}</b>
+                </div>
+                <div class="bm-stat-row">
+                    <span>A - Vinto:</span>
+                    <b>${fmt(s.A?.won || 0)}</b>
+                </div>
+                <div class="bm-stat-row">
+                    <span>A - Profitto:</span>
+                    <b class="${profA >= 0 ? 'pos' : 'neg'}">${fmt(profA)}</b>
+                </div>
+                <hr style="border-color:var(--border);margin:10px 0">
+                <div class="bm-stat-row">
+                    <span>B - Investito:</span>
+                    <b>${fmt(s.B?.invested || 0)}</b>
+                </div>
+                <div class="bm-stat-row">
+                    <span>B - Vinto:</span>
+                    <b>${fmt(s.B?.won || 0)}</b>
+                </div>
+                <div class="bm-stat-row">
+                    <span>B - Profitto:</span>
+                    <b class="${profB >= 0 ? 'pos' : 'neg'}">${fmt(profB)}</b>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+function addBookmaker() {
+    const name = prompt('Nome bookmaker:');
+    if (!name) return;
+    
+    State.ws.send(JSON.stringify({
+        type: 'ADD_BOOKMAKER',
+        name: name
+    }));
+    notify('Bookmaker aggiunto', 'success');
+}
+
+// ========== HISTORY ==========
+
+function renderHistory() {
+    const tb = document.getElementById('histBody');
+    if (!tb) return;
+    
+    const ops = State.data.operations || [];
+    if (!ops.length) {
+        tb.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text-muted)">Nessuna operazione</td></tr>';
+        return;
+    }
+    
+    tb.innerHTML = ops.slice().reverse().map(o => `
+        <tr>
+            <td>${new Date(o.timestamp).toLocaleString()}</td>
+            <td>${o.description || 'Bet'}</td>
+            <td>${o.bookmakerA || '-'}</td>
+            <td>${o.bookmakerB || '-'}</td>
+            <td>${fmt(o.investA)}</td>
+            <td>${fmt(o.investB)}</td>
+            <td class="${o.profitA >= 0 ? 'pos' : 'neg'}">${fmt(o.profitA)}</td>
+            <td class="${o.profitB >= 0 ? 'pos' : 'neg'}">${fmt(o.profitB)}</td>
+            <td class="${(o.profitA + o.profitB) >= 0 ? 'pos' : 'neg'}">${fmt(o.profitA + o.profitB)}</td>
+        </tr>
+    `).join('');
+}
+
+// ========== APPROVALS ==========
+
+function addApproval(appr) {
+    if (!State.data.pendingApprovals) State.data.pendingApprovals = [];
+    State.data.pendingApprovals.push(appr);
+    renderApprovals();
+    
+    const badge = document.getElementById('badgeApp');
+    const pending = State.data.pendingApprovals.filter(a => !a.status).length;
+    if (badge) {
+        badge.textContent = pending;
+        badge.style.display = pending ? 'block' : 'none';
+    }
+}
+
+function removeApproval(id) {
+    State.data.pendingApprovals = State.data.pendingApprovals.filter(a => a.id !== id);
+    renderApprovals();
+    
+    const pending = State.data.pendingApprovals.filter(a => !a.status).length;
+    const badge = document.getElementById('badgeApp');
+    if (badge) {
+        badge.textContent = pending;
+        badge.style.display = pending ? 'block' : 'none';
+    }
+}
+
+function renderApprovals() {
+    const list = document.getElementById('listApprovals');
+    if (!list) return;
+    
+    const pending = (State.data.pendingApprovals || []).filter(a => !a.status);
+    
+    if (!pending.length) {
+        list.innerHTML = '<p class="empty">Nessuna richiesta</p>';
+        return;
+    }
+    
+    list.innerHTML = pending.map(a => {
+        const mine = a.requestedBy === State.id;
+        const canAct = !mine && State.id !== 'OBSERVER';
+        const info = a.type === 'BALANCE_UPDATE' 
+            ? `${a.targetPlayer}: ${a.amount > 0 ? '+' : ''}${fmt(a.amount)}`
+            : `Profitto: ${fmt((a.data?.profitA || 0) + (a.data?.profitB || 0))}`;
+        
+        return `
+            <div class="approval-item">
+                <h5>${a.type === 'BALANCE_UPDATE' ? '💰 Modifica Saldo' : '🎲 Nuova Bet'}</h5>
+                <p>Da: Giocatore ${a.requestedBy}<br>${info}</p>
+                ${canAct ? `
+                    <div class="approval-actions">
+                        <button class="btn btn-primary" onclick="respondApproval('${a.id}', true)">✅ Approva</button>
+                        <button class="btn btn-secondary" onclick="respondApproval('${a.id}', false)">❌ Rifiuta</button>
+                    </div>
+                ` : '<p style="color:var(--text-muted)">In attesa...</p>'}
+            </div>
+        `;
+    }).join('');
+}
+
+function respondApproval(id, approve) {
+    State.ws.send(JSON.stringify({
+        type: approve ? 'APPROVE' : 'REJECT',
+        approvalId: id
+    }));
+}
+
+// ========== CHAT ==========
+
+function sendChat() {
+    const inp = document.getElementById('chatInput');
+    if (!inp) return;
+    const text = inp.value.trim();
+    if (!text || !State.connected) return;
+    
+    State.ws.send(JSON.stringify({ type: 'CHAT_MESSAGE', text }));
+    inp.value = '';
+}
+
+function addChatMessage(msg) {
+    const container = document.getElementById('chatMessages');
+    if (!container) return;
+    
+    const div = document.createElement('div');
+    div.className = 'chat-msg ' + (msg.playerId === State.id ? 'mine' : 'other');
+    const time = new Date(msg.timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+    div.innerHTML = `
+        ${escapeHtml(msg.text)}
+        <span class="meta">${msg.playerName} • ${time}</span>
+    `;
+    container.appendChild(div);
+    div.scrollIntoView();
+}
+
+function escapeHtml(t) {
+    const d = document.createElement('div');
+    d.textContent = t;
+    return d.innerHTML;
 }
 
 // ========== MODAL ==========
 
-function modal(type) {
-    if (State.id === 'OBSERVER') {
-        showNotification('Osservatori non possono operare', 'error');
-        return;
-    }
+function openModal(type) {
+    if (State.id === 'OBSERVER') return notify('Sola lettura', 'error');
     
     const m = document.getElementById('modal');
-    const t = document.getElementById('mTitle');
-    const b = document.getElementById('mBody');
+    const t = document.getElementById('modalTitle');
+    const b = document.getElementById('modalBody');
+    if (!m || !t || !b) return;
+    
     m.style.display = 'flex';
     
     if (type === 'funds') {
         t.textContent = '💰 Aggiungi Fondi';
         b.innerHTML = `
-            <label>Giocatore</label>
-            <select id="mPlayer"><option value="A">A</option><option value="B">B</option></select>
-            <label>Importo €</label>
-            <input type="number" id="mAmt" placeholder="100" step="0.01">
+            <div class="form-group">
+                <label>Giocatore</label>
+                <select id="mPlayer"><option value="A">A</option><option value="B">B</option></select>
+            </div>
+            <div class="form-group">
+                <label>Importo €</label>
+                <input type="number" id="mAmount" placeholder="100" step="0.01">
+            </div>
         `;
-        window.mConfirm = () => {
-            const amt = parseFloat(document.getElementById('mAmt').value) || 0;
-            if (!amt) return showNotification('Inserisci importo', 'error');
+        window.confirmModal = () => {
+            const amt = parseFloat(document.getElementById('mAmount').value) || 0;
+            if (!amt) return notify('Inserisci importo', 'error');
             State.ws.send(JSON.stringify({
                 type: 'REQUEST_BALANCE_UPDATE',
                 targetPlayer: document.getElementById('mPlayer').value,
                 amount: amt
             }));
             closeModal();
-            showNotification('Richiesta inviata', 'success');
+            notify('Richiesta inviata', 'success');
         };
         
     } else if (type === 'bet') {
+        const bms = State.data.bookmakers.map(bm => `<option value="${bm.id}">${bm.name}</option>`).join('');
+        
         t.textContent = '🎲 Nuova Scommessa';
         b.innerHTML = `
-            <label>Evento</label>
-            <input type="text" id="mDesc" placeholder="Es: Milan-Inter">
-            <label>Investimento €</label>
-            <input type="number" id="mInv" placeholder="100" step="0.01">
-            <label>Vincita €</label>
-            <input type="number" id="mWin" placeholder="105" step="0.01">
+            <div class="form-group">
+                <label>Evento</label>
+                <input type="text" id="mEvent" placeholder="Es: Milan-Inter">
+            </div>
+            <div class="form-group">
+                <label>Bookmaker A</label>
+                <select id="mBookA">${bms}</select>
+            </div>
+            <div class="form-group">
+                <label>Bookmaker B</label>
+                <select id="mBookB">${bms}</select>
+            </div>
+            <div class="form-group">
+                <label>Investimento Totale €</label>
+                <input type="number" id="mInvest" placeholder="100" step="0.01">
+            </div>
+            <div class="form-group">
+                <label>Vincita Totale €</label>
+                <input type="number" id="mWin" placeholder="105" step="0.01">
+            </div>
         `;
-        window.mConfirm = () => {
-            const inv = parseFloat(document.getElementById('mInv').value) || 0;
+        window.confirmModal = () => {
+            const inv = parseFloat(document.getElementById('mInvest').value) || 0;
             const win = parseFloat(document.getElementById('mWin').value) || 0;
-            if (!inv || !win) return showNotification('Inserisci tutti i valori', 'error');
+            if (!inv || !win) return notify('Inserisci tutti i valori', 'error');
             
             const profit = win - inv;
             
             State.ws.send(JSON.stringify({
                 type: 'REQUEST_BET',
                 betData: {
-                    description: document.getElementById('mDesc').value || 'Scommessa',
+                    description: document.getElementById('mEvent').value || 'Scommessa',
+                    bookmakerA: document.getElementById('mBookA').value,
+                    bookmakerB: document.getElementById('mBookB').value,
                     investA: inv * 0.5,
                     investB: inv * 0.5,
                     returnA: win * 0.5,
@@ -480,110 +669,19 @@ function modal(type) {
                 }
             }));
             closeModal();
-            showNotification('Richiesta inviata', 'success');
+            notify('Richiesta inviata', 'success');
         };
     }
 }
 
 function closeModal() {
-    document.getElementById('modal').style.display = 'none';
-}
-
-// ========== CHAT ==========
-
-function initChat() {
-    // Chat già inizializzata dall'HTML
-}
-
-function sendChat() {
-    const inp = document.getElementById('chatInp');
-    const text = inp.value.trim();
-    if (!text || !State.connected) return;
-    
-    State.ws.send(JSON.stringify({
-        type: 'CHAT_MESSAGE',
-        text: text
-    }));
-    inp.value = '';
-}
-
-function addChatMessage(msg) {
-    const div = document.createElement('div');
-    div.className = 'msg ' + (msg.playerId === State.id ? 'mine' : 'other');
-    const time = new Date(msg.timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
-    div.innerHTML = `
-        ${escapeHtml(msg.text)}
-        <span class="time">${msg.playerName} • ${time}</span>
-    `;
-    document.getElementById('chatMsgs').appendChild(div);
-    div.scrollIntoView();
-}
-
-function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-}
-
-// ========== APPROVALS ==========
-
-function addApproval(approval) {
-    if (!State.data.pendingApprovals) State.data.pendingApprovals = [];
-    State.data.pendingApprovals.push(approval);
-    renderApprovals();
-}
-
-function renderApprovals() {
-    const list = document.getElementById('appList');
-    const pending = (State.data.pendingApprovals || []).filter(a => a.status === 'pending');
-    
-    document.getElementById('badApp').textContent = pending.length;
-    document.getElementById('badApp').style.display = pending.length ? 'block' : 'none';
-    
-    if (!pending.length) {
-        list.innerHTML = '<div style="color:var(--tm);text-align:center;padding:20px;">Nessuna richiesta</div>';
-        return;
-    }
-    
-    list.innerHTML = pending.map(a => {
-        const mine = a.requestedBy === State.id;
-        const canAct = !mine && State.id !== 'OBSERVER';
-        const info = a.type === 'BALANCE_UPDATE' 
-            ? `${a.targetPlayer}: ${a.amount > 0 ? '+' : ''}${formatMoney(a.amount)}`
-            : `Profitto: ${formatMoney(a.data.profitA + a.data.profitB)}`;
-        
-        return `
-            <div class="app-item">
-                <h5>${a.type === 'BALANCE_UPDATE' ? '💰 Saldo' : '🎲 Bet'}</h5>
-                <p>Da: Giocatore ${a.requestedBy}<br>${info}</p>
-                ${canAct ? `
-                    <div class="app-btns">
-                        <button class="btn prim" onclick="respApp('${a.id}', true)">✅</button>
-                        <button class="btn sec" onclick="respApp('${a.id}', false)">❌</button>
-                    </div>
-                ` : '<p style="color:var(--tm)">Attesa...</p>'}
-            </div>
-        `;
-    }).join('');
-}
-
-function respApp(id, approved) {
-    if (!State.connected) return;
-    State.ws.send(JSON.stringify({
-        type: approved ? 'APPROVE' : 'REJECT',
-        approvalId: id
-    }));
-}
-
-function handleApprovalResult(data) {
-    State.data.pendingApprovals = (State.data.pendingApprovals || []).filter(a => a.id !== data.approvalId);
-    renderApprovals();
-    showNotification(data.result === 'approved' ? 'Approvato!' : 'Rifiutato', data.result === 'approved' ? 'success' : 'error');
+    const m = document.getElementById('modal');
+    if (m) m.style.display = 'none';
 }
 
 // ========== EXPORT/IMPORT ==========
 
-function exportFullData() {
+function exportData() {
     fetch('/api/export')
         .then(r => r.json())
         .then(data => {
@@ -593,12 +691,11 @@ function exportFullData() {
             a.href = url;
             a.download = `arbitraggio-backup-${new Date().toISOString().split('T')[0]}.json`;
             a.click();
-            showNotification('Dati esportati!', 'success');
-        })
-        .catch(err => showNotification('Errore: ' + err.message, 'error'));
+            notify('Dati esportati!', 'success');
+        });
 }
 
-function importFullData(input) {
+function importData(input) {
     const file = input.files[0];
     if (!file) return;
     
@@ -614,12 +711,12 @@ function importFullData(input) {
             .then(r => r.json())
             .then(res => {
                 if (res.success) {
-                    showNotification('Dati importati! Ricarico...', 'success');
+                    notify('Dati importati! Ricarico...', 'success');
                     setTimeout(() => location.reload(), 1500);
                 }
             });
         } catch (err) {
-            showNotification('File non valido', 'error');
+            notify('File non valido', 'error');
         }
     };
     reader.readAsText(file);
@@ -634,75 +731,97 @@ function importOnLogin(input) {
         try {
             const data = JSON.parse(e.target.result);
             localStorage.setItem('pendingImport', JSON.stringify(data));
-            showNotification('✅ File caricato! Scegli il ruolo', 'success');
+            notify('✅ File caricato! Scegli il ruolo', 'success');
         } catch (err) {
-            showNotification('❌ File non valido', 'error');
+            notify('❌ File non valido', 'error');
         }
     };
     reader.readAsText(file);
 }
 
-// ========== NAVIGAZIONE ==========
+// ========== SETTINGS ==========
 
-function show(id) {
-    document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
-    document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
-    document.getElementById(id).classList.add('active');
-    event.currentTarget.classList.add('active');
+function setTheme(color) {
+    const colors = {
+        green: '#00ff88',
+        blue: '#00d9ff',
+        red: '#ff4757',
+        purple: '#a55eea',
+        orange: '#ffa502'
+    };
+    
+    document.documentElement.style.setProperty('--primary', colors[color]);
+    
+    document.querySelectorAll('.color-opt').forEach(el => {
+        el.classList.toggle('active', el.dataset.theme === color);
+    });
+    
+    State.ws.send(JSON.stringify({
+        type: 'UPDATE_SETTINGS',
+        settings: { theme: color }
+    }));
 }
 
-function panelTab(id) {
-    document.querySelectorAll('.p-sec').forEach(s => s.classList.remove('active'));
-    document.querySelectorAll('.t-btn').forEach(b => b.classList.remove('active'));
-    document.getElementById('p-' + id).classList.add('active');
-    event.currentTarget.classList.add('active');
+function saveProfile() {
+    const name = document.getElementById('settName');
+    if (name && name.value.trim()) {
+        State.ws.send(JSON.stringify({
+            type: 'UPDATE_SETTINGS',
+            settings: { name: name.value.trim() }
+        }));
+        notify('Profilo aggiornato', 'success');
+    }
+}
+
+// ========== NAVIGATION ==========
+
+function showSection(id) {
+    document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+    document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+    const target = document.getElementById(id);
+    if (target) target.classList.add('active');
+    if (event && event.currentTarget) event.currentTarget.classList.add('active');
+    
+    if (id === 'bookmakers') {
+        renderBookmakers();
+        renderBookmakerStats();
+    }
+}
+
+function showPanel(id) {
+    document.querySelectorAll('.panel-section').forEach(s => s.classList.remove('active'));
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    const target = document.getElementById('panel-' + id);
+    if (target) target.classList.add('active');
+    if (event && event.currentTarget) event.currentTarget.classList.add('active');
 }
 
 function togglePanel() {
-    document.getElementById('rPanel').classList.toggle('open');
+    const panel = document.getElementById('rPanel');
+    if (panel) panel.classList.toggle('open');
 }
 
 function toggleSound() {
     State.soundEnabled = !State.soundEnabled;
-    document.getElementById('soundBtn').textContent = State.soundEnabled ? '🔊' : '🔇';
+    const btn = document.getElementById('soundBtn');
+    if (btn) btn.textContent = State.soundEnabled ? '🔊' : '🔇';
 }
 
-// ========== NOTIFICHE ==========
+// ========== NOTIFICATIONS ==========
 
-function showNotification(message, type) {
+function notify(msg, type) {
     const div = document.createElement('div');
     div.className = 'notification ' + type;
     const icon = type === 'error' ? '❌' : type === 'warning' ? '⚠️' : '✅';
-    div.innerHTML = `<b>${icon}</b> ${message}`;
-    document.getElementById('notifs').appendChild(div);
-    setTimeout(() => div.remove(), 5000);
-}
-
-// ========== STORICO ==========
-
-function renderHistory() {
-    const tb = document.getElementById('histBody');
-    const ops = State.data?.operations || [];
-    
-    if (!ops.length) {
-        tb.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--tm)">Nessuna operazione</td></tr>';
-        return;
+    div.innerHTML = `<b>${icon}</b> ${msg}`;
+    const container = document.getElementById('notifications');
+    if (container) {
+        container.appendChild(div);
+        setTimeout(() => div.remove(), 5000);
     }
-    
-    tb.innerHTML = ops.slice(-20).reverse().map(o => `
-        <tr>
-            <td>${new Date(o.timestamp).toLocaleString()}</td>
-            <td>${o.type}</td>
-            <td>${formatMoney(o.investA)}</td>
-            <td>${formatMoney(o.investB)}</td>
-            <td class="${o.profitA >= 0 ? 'pos' : 'neg'}">${formatMoney(o.profitA)}</td>
-            <td class="${o.profitB >= 0 ? 'pos' : 'neg'}">${formatMoney(o.profitB)}</td>
-            <td class="${(o.profitA+o.profitB) >= 0 ? 'pos' : 'neg'}">${formatMoney(o.profitA+o.profitB)}</td>
-        </tr>
-    `).join('');
 }
 
-// ========== INIZIALIZZAZIONE ==========
+// ========== INIT ==========
 
 document.addEventListener('DOMContentLoaded', () => {
     renderBetInputs();
