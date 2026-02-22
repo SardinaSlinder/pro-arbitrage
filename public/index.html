@@ -7,22 +7,50 @@
     <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
-    <!-- LOGIN -->
-    <div id="loginScreen" class="login-screen">
-        <div class="login-box">
-            <h1>⚡ Arbitraggio Pro</h1>
-            <p>Gestione capitale betting a 2</p>
+    <!-- LOGIN CON SCELTA RUOLO -->
+<div id="loginScreen" class="login-screen">
+    <div class="login-box">
+        <h1>⚡ Arbitraggio Pro</h1>
+        
+        <!-- Step 1: Nome -->
+        <div id="loginStep1">
+            <p>Inserisci il tuo nome</p>
             <input type="text" id="loginName" placeholder="Il tuo nome" maxlength="20">
-            <button onclick="connect()">Entra</button>
-            <div id="loginError" class="error"></div>
-            <div class="login-info">
-                <p>🟢 Primo entrato = Giocatore A</p>
-                <p>🔵 Secondo entrato = Giocatore B</p>
-                <p>⚪ Terzo+ = Osservatore</p>
+            <button onclick="goToStep2()">Avanti</button>
+        </div>
+        
+        <!-- Step 2: Scelta ruolo -->
+        <div id="loginStep2" style="display: none;">
+            <p>Scegli il tuo ruolo</p>
+            <div class="role-choices">
+                <button class="role-btn" onclick="chooseRole('A')" id="btnA">
+                    <span class="role-icon">🟢</span>
+                    <span class="role-name">Giocatore A</span>
+                    <span class="role-status" id="statusA">Libero</span>
+                </button>
+                <button class="role-btn" onclick="chooseRole('B')" id="btnB">
+                    <span class="role-icon">🔵</span>
+                    <span class="role-name">Giocatore B</span>
+                    <span class="role-status" id="statusB">Libero</span>
+                </button>
+                <button class="role-btn auto" onclick="chooseRole('AUTO')">
+                    <span class="role-icon">🎲</span>
+                    <span class="role-name">Automatico</span>
+                    <span class="role-status">Assegna disponibile</span>
+                </button>
             </div>
+            <button class="btn-back" onclick="backToStep1()">← Indietro</button>
+        </div>
+        
+        <div id="loginError" class="error"></div>
+        
+        <div class="login-info">
+            <p>📥 Puoi anche importare dati precedenti</p>
+            <input type="file" id="importFile" accept=".json" onchange="importOnLogin(this)" style="display: none;">
+            <button class="btn-import" onclick="document.getElementById('importFile').click()">📤 Importa Backup</button>
         </div>
     </div>
-
+</div>
     <!-- APP -->
     <div id="mainApp" class="app" style="display: none;">
         <!-- Header -->
@@ -338,4 +366,5 @@
 
     <script src="/js/app.js"></script>
 </body>
+
 </html>
