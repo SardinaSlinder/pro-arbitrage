@@ -186,4 +186,165 @@ th { color: var(--tm); font-size: 0.8rem; text-transform: uppercase; }
     .sidebar.open { left: 0; }
     .players-grid { grid-template-columns: 1fr; }
     .stats { grid-template-columns: 1fr; }
+
+}
+
+/* SCELTA RUOLO */
+.role-choices {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin: 20px 0;
+}
+
+.role-btn {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    padding: 20px;
+    background: var(--ch);
+    border: 2px solid var(--b);
+    border-radius: 12px;
+    color: var(--t);
+    cursor: pointer;
+    transition: all 0.2s;
+    text-align: left;
+}
+
+.role-btn:hover:not(:disabled) {
+    border-color: var(--p);
+    transform: translateX(5px);
+}
+
+.role-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.role-btn.taken {
+    border-color: var(--d);
+    opacity: 0.6;
+}
+
+.role-btn.auto {
+    background: linear-gradient(90deg, var(--ch), rgba(0,255,136,0.1));
+}
+
+.role-icon {
+    font-size: 2rem;
+}
+
+.role-name {
+    flex: 1;
+    font-size: 1.2rem;
+    font-weight: 600;
+}
+
+.role-status {
+    font-size: 0.85rem;
+    color: var(--tm);
+    padding: 4px 12px;
+    background: var(--bg);
+    border-radius: 20px;
+}
+
+.role-status.occupied {
+    color: var(--d);
+}
+
+.btn-back {
+    background: transparent;
+    border: 1px solid var(--b);
+    color: var(--tm);
+    padding: 12px 24px;
+    border-radius: 8px;
+    cursor: pointer;
+    margin-top: 10px;
+}
+
+.btn-import {
+    width: 100%;
+    padding: 15px;
+    background: var(--ch);
+    border: 1px dashed var(--p);
+    color: var(--p);
+    border-radius: 8px;
+    cursor: pointer;
+    margin-top: 10px;
+}
+
+/* BOOKMAKER SECTION */
+.bookmaker-section {
+    margin: 20px 0;
+    padding: 20px;
+    background: var(--ch);
+    border-radius: 12px;
+}
+
+.bookmaker-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 15px;
+    margin-top: 15px;
+}
+
+.bookmaker-card {
+    background: var(--c);
+    padding: 15px;
+    border-radius: 10px;
+    border: 2px solid var(--b);
+}
+
+.bookmaker-card h4 {
+    color: var(--p);
+    margin-bottom: 10px;
+}
+
+.bm-stats {
+    font-size: 0.9rem;
+    color: var(--tm);
+}
+
+.bm-stats div {
+    margin: 5px 0;
+}
+
+/* ANTI-SGAMO BUTTON */
+.anti-sgamo-btn {
+    background: linear-gradient(45deg, var(--w), #ff6b35);
+    color: #000;
+    font-weight: bold;
+    margin-top: 10px;
+}
+
+.anti-sgamo-info {
+    font-size: 0.85rem;
+    color: var(--tm);
+    margin-top: 5px;
+    font-style: italic;
+}
+
+/* EXPORT/IMPORT SECTION */
+.data-actions {
+    display: grid;
+    gap: 15px;
+}
+
+.data-actions button {
+    padding: 20px;
+    font-size: 1.1rem;
+}
+
+/* BOOKMAKER SELECT IN MODAL */
+.bm-select {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 15px;
+    margin: 15px 0;
+}
+
+.bm-select label {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
 }
