@@ -1,804 +1,355 @@
-// CONFIG
-const WS_URL = window.location.protocol === 'https:' 
-    ? `wss://${window.location.host}` 
-    : `ws://${window.location.host}`;
+const express = require('express');
+const http = require('http');
+const WebSocket = require('ws');
+const { v4: uuidv4 } = require('uuid');
+const path = require('path');
+const fs = require('fs');
 
-// STATE
-const State = {
-    ws: null,
-    id: null,
-    name: '',
-    connected: false,
-    data: null,
-    calc: null,
-    soundEnabled: true
+const app = express();
+const server = http.createServer(app);
+const wss = new WebSocket.Server({ server });
+
+// Middleware
+app.use(express.json());
+app.use(express.static('public'));
+
+// Stato persistente
+const STATE_FILE = './data/state.json';
+let state = {
+   players: {
+       A: { name: '', balance: 0, invested: 0, won: 0, connected: false, ws: null },
+       B: { name: '', balance: 0, invested: 0, won: 0, connected: false, ws: null }
+   },
+   operations: [],
+   bookmakers: [],
+   bookmakerStats: {},
+   pendingApprovals: [],
+   settings: { theme: 'green' }
 };
 
-// ========== LOGIN ==========
-
-let tempName = '';
-
-function goToStep2() {
-    tempName = document.getElementById('loginName').value.trim();
-    if (!tempName) {
-        document.getElementById('loginError').textContent = 'Inserisci il tuo nome';
-        return;
-    }
-    document.getElementById('loginStep1').style.display = 'none';
-    document.getElementById('loginStep2').style.display = 'block';
+// Carica stato
+function loadState() {
+   try {
+       if (fs.existsSync(STATE_FILE)) {
+           const data = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
+           state = { ...state, ...data };
+           // Reset connessioni
+           state.players.A.connected = false;
+           state.players.B.connected = false;
+           state.players.A.ws = null;
+           state.players.B.ws = null;
+       }
+   } catch (err) {
+       console.error('Errore caricamento stato:', err);
+   }
 }
 
-function backToStep1() {
-    document.getElementById('loginStep2').style.display = 'none';
-    document.getElementById('loginStep1').style.display = 'block';
+// Salva stato
+function saveState() {
+   try {
+       if (!fs.existsSync('./data')) fs.mkdirSync('./data');
+       const saveData = {
+           players: {
+               A: { ...state.players.A, ws: null, connected: false },
+               B: { ...state.players.B, ws: null, connected: false }
+           },
+           operations: state.operations,
+           bookmakers: state.bookmakers,
+           bookmakerStats: state.bookmakerStats,
+           pendingApprovals: state.pendingApprovals,
+           settings: state.settings
+       };
+       fs.writeFileSync(STATE_FILE, JSON.stringify(saveData, null, 2));
+   } catch (err) {
+       console.error('Errore salvataggio stato:', err);
+   }
 }
 
-function chooseRole(role) {
-    State.name = tempName;
-    State.ws = new WebSocket(WS_URL);
-    
-    State.ws.onopen = () => {
-        State.connected = true;
-        document.getElementById('connStatus').classList.add('on');
-        
-        State.ws.send(JSON.stringify({
-            type: 'CHOOSE_ROLE',
-            role: role,
-            name: tempName
-        }));
-    };
-    
-    State.ws.onmessage = (e) => {
-        const data = JSON.parse(e.data);
-        handleMessage(data);
-    };
-    
-    State.ws.onclose = () => {
-        State.connected = false;
-        document.getElementById('connStatus').classList.remove('on');
-    };
-    
-    State.ws.onerror = (err) => {
-        document.getElementById('loginError').textContent = 'Errore connessione';
-    };
+// Broadcast a tutti i client
+function broadcast(data, excludeWs = null) {
+   wss.clients.forEach(client => {
+       if (client !== excludeWs && client.readyState === WebSocket.OPEN) {
+           client.send(JSON.stringify(data));
+       }
+   });
 }
 
-// ========== MESSAGE HANDLER ==========
-
-function handleMessage(data) {
-    switch(data.type) {
-        case 'INIT_STATE':
-            State.id = data.playerId;
-            State.data = data.state;
-            enterApp();
-            break;
-            
-        case 'PLAYER_CONNECTED':
-            updatePlayerStatus(data.playerId, true, data.playerName);
-            notify(`${data.playerName} connesso`, 'success');
-            break;
-            
-        case 'PLAYER_DISCONNECTED':
-            updatePlayerStatus(data.playerId, false);
-            notify(`Giocatore ${data.playerId} disconnesso`, 'warning');
-            break;
-            
-        case 'NEW_MESSAGE':
-            addChatMessage(data.message);
-            break;
-            
-        case 'APPROVAL_REQUIRED':
-            addApproval(data.approval);
-            notify('Nuova richiesta da approvare!', 'warning');
-            break;
-            
-        case 'APPROVAL_RESULT':
-            removeApproval(data.approvalId);
-            notify(data.result === 'approved' ? 'Approvato!' : 'Rifiutato', data.result === 'approved' ? 'success' : 'error');
-            break;
-            
-        case 'BALANCE_UPDATED':
-            State.data.players[data.playerId].balance = data.newBalance;
-            refreshDashboard();
-            notify('Saldo aggiornato', 'success');
-            break;
-            
-        case 'BET_EXECUTED':
-            State.data.players = data.players;
-            State.data.operations.push(data.bet);
-            State.data.bookmakerStats = data.bookmakerStats || {};
-            refreshDashboard();
-            renderHistory();
-            notify('Operazione eseguita!', 'success');
-            break;
-            
-        case 'SETTLEMENT_EXECUTED':
-            State.data.players.A.balance = data.newBalances.A;
-            State.data.players.B.balance = data.newBalances.B;
-            refreshDashboard();
-            notify('Pagamento confermato!', 'success');
-            document.getElementById('settleBox').style.display = 'none';
-            break;
-            
-        case 'BOOKMAKERS_UPDATED':
-            State.data.bookmakers = data.bookmakers;
-            renderBookmakers();
-            break;
-            
-        case 'DATA_IMPORTED':
-            State.data = data.state;
-            refreshAll();
-            notify('Dati importati!', 'success');
-            break;
-            
-        case 'ERROR':
-            notify(data.message, 'error');
-            break;
-    }
+// Invia a specifico player
+function sendToPlayer(playerId, data) {
+   const ws = state.players[playerId]?.ws;
+   if (ws && ws.readyState === WebSocket.OPEN) {
+       ws.send(JSON.stringify(data));
+   }
 }
 
-// ========== ENTER APP ==========
+// Gestione WebSocket
+wss.on('connection', (ws) => {
+   let playerId = null;
+   let playerName = '';
 
-function enterApp() {
-    document.getElementById('loginScreen').style.display = 'none';
-    document.getElementById('mainApp').style.display = 'grid';
-    
-    const badge = State.id === 'OBSERVER' ? 'Osservatore' : `Giocatore ${State.id}`;
-    document.getElementById('playerBadge').textContent = badge;
-    
-    if (State.data.players.A) {
-        document.getElementById('nameA').textContent = State.data.players.A.name;
-        updatePlayerStatus('A', State.data.players.A.connected);
-    }
-    if (State.data.players.B) {
-        document.getElementById('nameB').textContent = State.data.players.B.name;
-        updatePlayerStatus('B', State.data.players.B.connected);
-    }
-    
-    refreshAll();
+   ws.on('message', (message) => {
+       try {
+           const data = JSON.parse(message);
+           
+           switch(data.type) {
+               case 'CHOOSE_ROLE':
+                   playerId = data.role;
+                   playerName = data.name;
+                   
+                   if (playerId === 'OBSERVER') {
+                       ws.send(JSON.stringify({
+                           type: 'INIT_STATE',
+                           playerId: 'OBSERVER',
+                           state: sanitizeState()
+                       }));
+                       return;
+                   }
+                   
+                   if (state.players[playerId].connected) {
+                       ws.send(JSON.stringify({
+                           type: 'ERROR',
+                           message: 'Ruolo già occupato'
+                       }));
+                       ws.close();
+                       return;
+                   }
+                   
+                   state.players[playerId].connected = true;
+                   state.players[playerId].name = playerName;
+                   state.players[playerId].ws = ws;
+                   
+                   ws.send(JSON.stringify({
+                       type: 'INIT_STATE',
+                       playerId: playerId,
+                       state: sanitizeState()
+                   }));
+                   
+                   broadcast({
+                       type: 'PLAYER_CONNECTED',
+                       playerId: playerId,
+                       playerName: playerName
+                   }, ws);
+                   
+                   saveState();
+                   break;
+
+               case 'REQUEST_BALANCE_UPDATE':
+                   if (!playerId || playerId === 'OBSERVER') return;
+                   
+                   const approvalId = uuidv4();
+                   const approval = {
+                       id: approvalId,
+                       type: 'BALANCE_UPDATE',
+                       requestedBy: playerId,
+                       targetPlayer: data.targetPlayer,
+                       amount: data.amount,
+                       status: 'pending',
+                       timestamp: Date.now()
+                   };
+                   
+                   state.pendingApprovals.push(approval);
+                   broadcast({ type: 'APPROVAL_REQUIRED', approval: approval });
+                   saveState();
+                   break;
+
+               case 'REQUEST_BET':
+                   if (!playerId || playerId === 'OBSERVER') return;
+                   
+                   const betApprovalId = uuidv4();
+                   const betApproval = {
+                       id: betApprovalId,
+                       type: 'BET',
+                       requestedBy: playerId,
+                       data: data.betData,
+                       status: 'pending',
+                       timestamp: Date.now()
+                   };
+                   
+                   state.pendingApprovals.push(betApproval);
+                   broadcast({ type: 'APPROVAL_REQUIRED', approval: betApproval });
+                   saveState();
+                   break;
+
+               case 'APPROVE':
+               case 'REJECT':
+                   if (!playerId || playerId === 'OBSERVER') return;
+                   
+                   const appr = state.pendingApprovals.find(a => a.id === data.approvalId);
+                   if (!appr || appr.requestedBy === playerId) return;
+                   
+                   appr.status = data.type === 'APPROVE' ? 'approved' : 'rejected';
+                   appr.approvedBy = playerId;
+                   
+                   if (appr.status === 'approved') {
+                       if (appr.type === 'BALANCE_UPDATE') {
+                           state.players[appr.targetPlayer].balance += appr.amount;
+                           broadcast({
+                               type: 'BALANCE_UPDATED',
+                               playerId: appr.targetPlayer,
+                               newBalance: state.players[appr.targetPlayer].balance
+                           });
+                       } else if (appr.type === 'BET') {
+                           executeBet(appr.data);
+                       }
+                   }
+                   
+                   broadcast({
+                       type: 'APPROVAL_RESULT',
+                       approvalId: appr.id,
+                       result: appr.status
+                   });
+                   
+                   state.pendingApprovals = state.pendingApprovals.filter(a => a.id !== appr.id);
+                   saveState();
+                   break;
+
+               case 'CONFIRM_SETTLEMENT':
+                   if (!playerId || playerId === 'OBSERVER') return;
+                   
+                   const total = state.players.A.balance + state.players.B.balance;
+                   const half = total / 2;
+                   
+                   state.players.A.balance = half;
+                   state.players.B.balance = half;
+                   
+                   broadcast({
+                       type: 'SETTLEMENT_EXECUTED',
+                       newBalances: {
+                           A: state.players.A.balance,
+                           B: state.players.B.balance
+                       }
+                   });
+                   saveState();
+                   break;
+
+               case 'CHAT_MESSAGE':
+                   if (!playerId) return;
+                   
+                   broadcast({
+                       type: 'NEW_MESSAGE',
+                       message: {
+                           playerId: playerId,
+                           playerName: state.players[playerId]?.name || 'Osservatore',
+                           text: data.text,
+                           timestamp: Date.now()
+                       }
+                   });
+                   break;
+
+               case 'ADD_BOOKMAKER':
+                   if (!playerId || playerId === 'OBSERVER') return;
+                   
+                   const bm = {
+                       id: uuidv4(),
+                       name: data.name,
+                       addedBy: playerId
+                   };
+                   state.bookmakers.push(bm);
+                   broadcast({ type: 'BOOKMAKERS_UPDATED', bookmakers: state.bookmakers });
+                   saveState();
+                   break;
+
+               case 'UPDATE_SETTINGS':
+                   if (data.settings.name && playerId && playerId !== 'OBSERVER') {
+                       state.players[playerId].name = data.settings.name;
+                   }
+                   if (data.settings.theme) {
+                       state.settings.theme = data.settings.theme;
+                   }
+                   saveState();
+                   break;
+           }
+       } catch (err) {
+           console.error('Errore messaggio:', err);
+       }
+   });
+
+   ws.on('close', () => {
+       if (playerId && playerId !== 'OBSERVER' && state.players[playerId]) {
+           state.players[playerId].connected = false;
+           state.players[playerId].ws = null;
+           broadcast({
+               type: 'PLAYER_DISCONNECTED',
+               playerId: playerId
+           });
+           saveState();
+       }
+   });
+});
+
+// Esegue una bet
+function executeBet(betData) {
+   const op = {
+       ...betData,
+       id: uuidv4(),
+       timestamp: Date.now(),
+       type: 'BET'
+   };
+   
+   state.operations.push(op);
+   
+   // Aggiorna bilanci
+   state.players.A.balance -= betData.investA;
+   state.players.B.balance -= betData.investB;
+   state.players.A.invested += betData.investA;
+   state.players.B.invested += betData.investB;
+   
+   // Aggiorna stats bookmaker
+   if (betData.bookmakerA) {
+       if (!state.bookmakerStats[betData.bookmakerA]) state.bookmakerStats[betData.bookmakerA] = { A: { invested: 0, won: 0 }, B: { invested: 0, won: 0 } };
+       state.bookmakerStats[betData.bookmakerA].A.invested += betData.investA;
+   }
+   if (betData.bookmakerB) {
+       if (!state.bookmakerStats[betData.bookmakerB]) state.bookmakerStats[betData.bookmakerB] = { A: { invested: 0, won: 0 }, B: { invested: 0, won: 0 } };
+       state.bookmakerStats[betData.bookmakerB].B.invested += betData.investB;
+   }
+   
+   broadcast({
+       type: 'BET_EXECUTED',
+       players: state.players,
+       bet: op,
+       bookmakerStats: state.bookmakerStats
+   });
 }
 
-function updatePlayerStatus(id, connected, name) {
-    const el = document.getElementById('status' + id);
-    if (el) {
-        el.textContent = connected ? '🟢 Online' : '⚫ Offline';
-        el.style.color = connected ? 'var(--primary)' : 'var(--text-muted)';
-    }
-    if (name && State.data.players[id]) {
-        State.data.players[id].name = name;
-        document.getElementById('name' + id).textContent = name;
-    }
+// Rimuove riferimenti WebSocket dallo stato inviato al client
+function sanitizeState() {
+   return {
+       players: {
+           A: { ...state.players.A, ws: undefined },
+           B: { ...state.players.B, ws: undefined }
+       },
+       operations: state.operations,
+       bookmakers: state.bookmakers,
+       bookmakerStats: state.bookmakerStats,
+       pendingApprovals: state.pendingApprovals,
+       settings: state.settings
+   };
 }
 
-function refreshAll() {
-    refreshDashboard();
-    renderHistory();
-    renderApprovals();
-    renderBookmakers();
-    renderBookmakerStats();
-}
+// API Routes
+app.get('/api/export', (req, res) => {
+   res.json(sanitizeState());
+});
 
-// ========== DASHBOARD ==========
+app.post('/api/import', (req, res) => {
+   try {
+       const data = req.body;
+       if (data.players) state.players = { ...state.players, ...data.players };
+       if (data.operations) state.operations = data.operations;
+       if (data.bookmakers) state.bookmakers = data.bookmakers;
+       if (data.bookmakerStats) state.bookmakerStats = data.bookmakerStats;
+       saveState();
+       broadcast({ type: 'DATA_IMPORTED', state: sanitizeState() });
+       res.json({ success: true });
+   } catch (err) {
+       res.status(400).json({ error: err.message });
+   }
+});
 
-function refreshDashboard() {
-    const a = State.data.players.A;
-    const b = State.data.players.B;
-    
-    // A
-    document.getElementById('balA').textContent = fmt(a.balance);
-    document.getElementById('invA').textContent = fmt(a.invested);
-    document.getElementById('wonA').textContent = fmt(a.won);
-    const pa = a.won - a.invested;
-    document.getElementById('profA').textContent = (pa >= 0 ? '+' : '') + fmt(pa);
-    document.getElementById('profA').className = pa >= 0 ? 'pos' : 'neg';
-    
-    // B
-    document.getElementById('balB').textContent = fmt(b.balance);
-    document.getElementById('invB').textContent = fmt(b.invested);
-    document.getElementById('wonB').textContent = fmt(b.won);
-    const pb = b.won - b.invested;
-    document.getElementById('profB').textContent = (pb >= 0 ? '+' : '') + fmt(pb);
-    document.getElementById('profB').className = pb >= 0 ? 'pos' : 'neg';
-}
-
-function fmt(n) {
-    return '€' + Math.abs(n || 0).toFixed(2);
-}
-
-// ========== SETTLEMENT ==========
-
-function calculateSettlement() {
-    const a = State.data.players.A.balance;
-    const b = State.data.players.B.balance;
-    const diff = a - (a + b) / 2;
-    
-    const box = document.getElementById('settleBox');
-    const txt = document.getElementById('settleText');
-    const amt = document.getElementById('settleAmount');
-    
-    box.style.display = 'block';
-    
-    if (Math.abs(diff) < 0.01) {
-        txt.innerHTML = '<b style="color:var(--primary)">✅ Conti in pari!</b>';
-        amt.style.display = 'none';
-        box.querySelector('.btn').style.display = 'none';
-    } else {
-        const from = diff > 0 ? 'B' : 'A';
-        const to = diff > 0 ? 'A' : 'B';
-        txt.innerHTML = `Giocatore <b>${from}</b> deve dare a <b>${to}</b>:`;
-        amt.textContent = fmt(Math.abs(diff));
-        amt.style.display = 'block';
-        box.querySelector('.btn').style.display = 'inline-block';
-    }
-}
-
-function confirmSettlement() {
-    State.ws.send(JSON.stringify({ type: 'CONFIRM_SETTLEMENT' }));
-}
-
-// ========== CALCOLATORE ==========
-
-let numBets = 2;
-
-function setBetCount(n) {
-    numBets = n;
-    document.querySelectorAll('.btn-toggle').forEach((b, i) => {
-        b.classList.toggle('active', i === (n === 2 ? 0 : 1));
-    });
-    renderBetInputs();
-}
-
-function renderBetInputs() {
-    const c = document.getElementById('betInputs');
-    c.innerHTML = '';
-    for (let i = 0; i < numBets; i++) {
-        c.innerHTML += `
-            <div class="bet-input-row">
-                <input type="text" placeholder="Esito ${i+1}" id="n${i}">
-                <input type="number" placeholder="Quota" step="0.01" id="q${i}">
-            </div>
-        `;
-    }
-}
-
-function updateSplitMode() {
-    const m = document.getElementById('splitMode').value;
-    document.getElementById('customSplitBox').style.display = m === 'custom' ? 'block' : 'none';
-}
-
-function calculate() {
-    const total = parseFloat(document.getElementById('calcTotal').value) || 0;
-    if (!total) return notify('Inserisci capitale', 'error');
-    
-    const quotes = [];
-    for (let i = 0; i < numBets; i++) {
-        const q = parseFloat(document.getElementById(`q${i}`).value);
-        if (!q) return notify(`Quota mancante esito ${i+1}`, 'error');
-        quotes.push(q);
-    }
-    
-    const stakes = quotes.map(q => total / q);
-    const totStake = stakes.reduce((a, b) => a + b, 0);
-    const returns = stakes.map((s, i) => s * quotes[i]);
-    const profit = returns[0] - totStake;
-    const roi = (profit / totStake) * 100;
-    
-    // Divisione
-    const mode = document.getElementById('splitMode').value;
-    let splitA = 0.5;
-    if (mode === 'proportional') {
-        const balA = State.data.players.A.balance || 1;
-        const balB = State.data.players.B.balance || 1;
-        splitA = balA / (balA + balB);
-    } else if (mode === 'custom') {
-        splitA = parseInt(document.querySelector('#customSplitBox input').value) / 100;
-    }
-    
-    State.calc = {
-        investA: totStake * splitA,
-        investB: totStake * (1 - splitA),
-        returnA: returns[0] * splitA,
-        returnB: returns[0] * (1 - splitA),
-        profitA: profit * splitA,
-        profitB: profit * (1 - splitA),
-        ratioA: returns[0] / (totStake * splitA)
-    };
-    
-    // Display
-    document.getElementById('resA').innerHTML = `
-        <h4>🟢 Giocatore A</h4>
-        <div>Punta: <b>${fmt(State.calc.investA)}</b></div>
-        <div>Rientra: ${fmt(State.calc.returnA)}</div>
-        <div style="color:var(--primary);margin-top:10px"><b>Profitto: ${fmt(State.calc.profitA)}</b></div>
-    `;
-    
-    document.getElementById('resB').innerHTML = `
-        <h4>🔵 Giocatore B</h4>
-        <div>Punta: <b>${fmt(State.calc.investB)}</b></div>
-        <div>Rientra: ${fmt(State.calc.returnB)}</div>
-        <div style="color:var(--primary);margin-top:10px"><b>Profitto: ${fmt(State.calc.profitB)}</b></div>
-    `;
-    
-    document.getElementById('totProfit').textContent = fmt(profit);
-    document.getElementById('totRoi').textContent = roi.toFixed(2) + '%';
-    document.getElementById('btnSaveCalc').disabled = false;
-    document.getElementById('btnAntiSgamo').style.display = 'block';
-    document.getElementById('textAntiSgamo').style.display = 'block';
-}
-
-function applyAntiSgamo() {
-    if (!State.calc) return;
-    
-    const origA = State.calc.investA;
-    const origB = State.calc.investB;
-    
-    // Arrotonda a decine
-    const roundA = Math.round(origA / 10) * 10;
-    const roundB = Math.round(origB / 10) * 10;
-    
-    // Ricalcola
-    State.calc.investA = roundA;
-    State.calc.investB = roundB;
-    State.calc.returnA = roundA * State.calc.ratioA;
-    State.calc.returnB = roundB * State.calc.ratioA;
-    State.calc.profitA = State.calc.returnA - roundA;
-    State.calc.profitB = State.calc.returnB - roundB;
-    
-    // Update display
-    document.getElementById('resA').innerHTML = `
-        <h4>🟢 Giocatore A 🎭</h4>
-        <div>Punta: <s style="opacity:0.5">${fmt(origA)}</s> → <b style="color:var(--warning)">${fmt(roundA)}</b></div>
-        <div>Rientra: ${fmt(State.calc.returnA)}</div>
-        <div style="color:var(--primary);margin-top:10px"><b>Profitto: ${fmt(State.calc.profitA)}</b></div>
-    `;
-    document.getElementById('resB').innerHTML = `
-        <h4>🔵 Giocatore B 🎭</h4>
-        <div>Punta: <s style="opacity:0.5">${fmt(origB)}</s> → <b style="color:var(--warning)">${fmt(roundB)}</b></div>
-        <div>Rientra: ${fmt(State.calc.returnB)}</div>
-        <div style="color:var(--primary);margin-top:10px"><b>Profitto: ${fmt(State.calc.profitB)}</b></div>
-    `;
-    
-    notify(`🎭 Anti-Sgamo: ${fmt(origA)}→${fmt(roundA)}, ${fmt(origB)}→${fmt(roundB)}`, 'success');
-}
-
-function saveCalculation() {
-    if (!State.calc || State.id === 'OBSERVER') return;
-    
-    State.ws.send(JSON.stringify({
-        type: 'REQUEST_BET',
-        betData: {
-            ...State.calc,
-            description: 'Calcolatore',
-            bookmakerA: null,
-            bookmakerB: null
-        }
-    }));
-    notify('Richiesta inviata', 'success');
-}
-
-// ========== BOOKMAKERS ==========
-
-function renderBookmakers() {
-    const list = document.getElementById('bmList');
-    if (!list) return;
-    
-    const bms = State.data.bookmakers || [];
-    list.innerHTML = bms.map(bm => `
-        <div class="bm-item">
-            <h4>${bm.name}</h4>
-            <p style="color:var(--text-muted);font-size:0.85rem">ID: ${bm.id}</p>
-        </div>
-    `).join('');
-}
-
-function renderBookmakerStats() {
-    const grid = document.getElementById('bmStats');
-    if (!grid) return;
-    
-    const stats = State.data.bookmakerStats || {};
-    const bms = State.data.bookmakers || [];
-    
-    if (!Object.keys(stats).length) {
-        grid.innerHTML = '<p style="color:var(--text-muted)">Nessuna statistica disponibile</p>';
-        return;
-    }
-    
-    grid.innerHTML = bms.filter(bm => stats[bm.id]).map(bm => {
-        const s = stats[bm.id];
-        const profA = (s.A?.won || 0) - (s.A?.invested || 0);
-        const profB = (s.B?.won || 0) - (s.B?.invested || 0);
-        
-        return `
-            <div class="bm-stat-card">
-                <h4>${bm.name}</h4>
-                <div class="bm-stat-row">
-                    <span>A - Investito:</span>
-                    <b>${fmt(s.A?.invested || 0)}</b>
-                </div>
-                <div class="bm-stat-row">
-                    <span>A - Vinto:</span>
-                    <b>${fmt(s.A?.won || 0)}</b>
-                </div>
-                <div class="bm-stat-row">
-                    <span>A - Profitto:</span>
-                    <b class="${profA >= 0 ? 'pos' : 'neg'}">${fmt(profA)}</b>
-                </div>
-                <hr style="border-color:var(--border);margin:10px 0">
-                <div class="bm-stat-row">
-                    <span>B - Investito:</span>
-                    <b>${fmt(s.B?.invested || 0)}</b>
-                </div>
-                <div class="bm-stat-row">
-                    <span>B - Vinto:</span>
-                    <b>${fmt(s.B?.won || 0)}</b>
-                </div>
-                <div class="bm-stat-row">
-                    <span>B - Profitto:</span>
-                    <b class="${profB >= 0 ? 'pos' : 'neg'}">${fmt(profB)}</b>
-                </div>
-            </div>
-        `;
-    }).join('');
-}
-
-function addBookmaker() {
-    const name = prompt('Nome bookmaker:');
-    if (!name) return;
-    
-    State.ws.send(JSON.stringify({
-        type: 'ADD_BOOKMAKER',
-        name: name
-    }));
-    notify('Bookmaker aggiunto', 'success');
-}
-
-// ========== HISTORY ==========
-
-function renderHistory() {
-    const tb = document.getElementById('histBody');
-    if (!tb) return;
-    
-    const ops = State.data.operations || [];
-    if (!ops.length) {
-        tb.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text-muted)">Nessuna operazione</td></tr>';
-        return;
-    }
-    
-    tb.innerHTML = ops.slice().reverse().map(o => `
-        <tr>
-            <td>${new Date(o.timestamp).toLocaleString()}</td>
-            <td>${o.description || 'Bet'}</td>
-            <td>${o.bookmakerA || '-'}</td>
-            <td>${o.bookmakerB || '-'}</td>
-            <td>${fmt(o.investA)}</td>
-            <td>${fmt(o.investB)}</td>
-            <td class="${o.profitA >= 0 ? 'pos' : 'neg'}">${fmt(o.profitA)}</td>
-            <td class="${o.profitB >= 0 ? 'pos' : 'neg'}">${fmt(o.profitB)}</td>
-            <td class="${(o.profitA + o.profitB) >= 0 ? 'pos' : 'neg'}">${fmt(o.profitA + o.profitB)}</td>
-        </tr>
-    `).join('');
-}
-
-// ========== APPROVALS ==========
-
-function addApproval(appr) {
-    if (!State.data.pendingApprovals) State.data.pendingApprovals = [];
-    State.data.pendingApprovals.push(appr);
-    renderApprovals();
-    
-    const badge = document.getElementById('badgeApp');
-    const pending = State.data.pendingApprovals.filter(a => !a.status).length;
-    badge.textContent = pending;
-    badge.style.display = pending ? 'block' : 'none';
-}
-
-function removeApproval(id) {
-    State.data.pendingApprovals = State.data.pendingApprovals.filter(a => a.id !== id);
-    renderApprovals();
-    
-    const pending = State.data.pendingApprovals.filter(a => !a.status).length;
-    const badge = document.getElementById('badgeApp');
-    badge.textContent = pending;
-    badge.style.display = pending ? 'block' : 'none';
-}
-
-function renderApprovals() {
-    const list = document.getElementById('listApprovals');
-    if (!list) return;
-    
-    const pending = (State.data.pendingApprovals || []).filter(a => !a.status);
-    
-    if (!pending.length) {
-        list.innerHTML = '<p class="empty">Nessuna richiesta</p>';
-        return;
-    }
-    
-    list.innerHTML = pending.map(a => {
-        const mine = a.requestedBy === State.id;
-        const canAct = !mine && State.id !== 'OBSERVER';
-        const info = a.type === 'BALANCE_UPDATE' 
-            ? `${a.targetPlayer}: ${a.amount > 0 ? '+' : ''}${fmt(a.amount)}`
-            : `Profitto: ${fmt((a.data?.profitA || 0) + (a.data?.profitB || 0))}`;
-        
-        return `
-            <div class="approval-item">
-                <h5>${a.type === 'BALANCE_UPDATE' ? '💰 Modifica Saldo' : '🎲 Nuova Bet'}</h5>
-                <p>Da: Giocatore ${a.requestedBy}<br>${info}</p>
-                ${canAct ? `
-                    <div class="approval-actions">
-                        <button class="btn btn-primary" onclick="respondApproval('${a.id}', true)">✅ Approva</button>
-                        <button class="btn btn-secondary" onclick="respondApproval('${a.id}', false)">❌ Rifiuta</button>
-                    </div>
-                ` : '<p style="color:var(--text-muted)">In attesa...</p>'}
-            </div>
-        `;
-    }).join('');
-}
-
-function respondApproval(id, approve) {
-    State.ws.send(JSON.stringify({
-        type: approve ? 'APPROVE' : 'REJECT',
-        approvalId: id
-    }));
-}
-
-// ========== CHAT ==========
-
-function sendChat() {
-    const inp = document.getElementById('chatInput');
-    const text = inp.value.trim();
-    if (!text || !State.connected) return;
-    
-    State.ws.send(JSON.stringify({ type: 'CHAT_MESSAGE', text }));
-    inp.value = '';
-}
-
-function addChatMessage(msg) {
-    const div = document.createElement('div');
-    div.className = 'chat-msg ' + (msg.playerId === State.id ? 'mine' : 'other');
-    const time = new Date(msg.timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
-    div.innerHTML = `
-        ${escapeHtml(msg.text)}
-        <span class="meta">${msg.playerName} • ${time}</span>
-    `;
-    document.getElementById('chatMessages').appendChild(div);
-    div.scrollIntoView();
-}
-
-function escapeHtml(t) {
-    const d = document.createElement('div');
-    d.textContent = t;
-    return d.innerHTML;
-}
-
-// ========== MODAL ==========
-
-function openModal(type) {
-    if (State.id === 'OBSERVER') return notify('Sola lettura', 'error');
-    
-    const m = document.getElementById('modal');
-    const t = document.getElementById('modalTitle');
-    const b = document.getElementById('modalBody');
-    m.style.display = 'flex';
-    
-    if (type === 'funds') {
-        t.textContent = '💰 Aggiungi Fondi';
-        b.innerHTML = `
-            <div class="form-group">
-                <label>Giocatore</label>
-                <select id="mPlayer"><option value="A">A</option><option value="B">B</option></select>
-            </div>
-            <div class="form-group">
-                <label>Importo €</label>
-                <input type="number" id="mAmount" placeholder="100" step="0.01">
-            </div>
-        `;
-        window.confirmModal = () => {
-            const amt = parseFloat(document.getElementById('mAmount').value) || 0;
-            if (!amt) return notify('Inserisci importo', 'error');
-            State.ws.send(JSON.stringify({
-                type: 'REQUEST_BALANCE_UPDATE',
-                targetPlayer: document.getElementById('mPlayer').value,
-                amount: amt
-            }));
-            closeModal();
-            notify('Richiesta inviata', 'success');
-        };
-        
-    } else if (type === 'bet') {
-        const bms = State.data.bookmakers.map(bm => `<option value="${bm.id}">${bm.name}</option>`).join('');
-        
-        t.textContent = '🎲 Nuova Scommessa';
-        b.innerHTML = `
-            <div class="form-group">
-                <label>Evento</label>
-                <input type="text" id="mEvent" placeholder="Es: Milan-Inter">
-            </div>
-            <div class="form-group">
-                <label>Bookmaker A</label>
-                <select id="mBookA">${bms}</select>
-            </div>
-            <div class="form-group">
-                <label>Bookmaker B</label>
-                <select id="mBookB">${bms}</select>
-            </div>
-            <div class="form-group">
-                <label>Investimento Totale €</label>
-                <input type="number" id="mInvest" placeholder="100" step="0.01">
-            </div>
-            <div class="form-group">
-                <label>Vincita Totale €</label>
-                <input type="number" id="mWin" placeholder="105" step="0.01">
-            </div>
-        `;
-        window.confirmModal = () => {
-            const inv = parseFloat(document.getElementById('mInvest').value) || 0;
-            const win = parseFloat(document.getElementById('mWin').value) || 0;
-            if (!inv || !win) return notify('Inserisci tutti i valori', 'error');
-            
-            const profit = win - inv;
-            
-            State.ws.send(JSON.stringify({
-                type: 'REQUEST_BET',
-                betData: {
-                    description: document.getElementById('mEvent').value || 'Scommessa',
-                    bookmakerA: document.getElementById('mBookA').value,
-                    bookmakerB: document.getElementById('mBookB').value,
-                    investA: inv * 0.5,
-                    investB: inv * 0.5,
-                    returnA: win * 0.5,
-                    returnB: win * 0.5,
-                    profitA: profit * 0.5,
-                    profitB: profit * 0.5
-                }
-            }));
-            closeModal();
-            notify('Richiesta inviata', 'success');
-        };
-    }
-}
-
-function closeModal() {
-    document.getElementById('modal').style.display = 'none';
-}
-
-// ========== EXPORT/IMPORT ==========
-
-function exportData() {
-    fetch('/api/export')
-        .then(r => r.json())
-        .then(data => {
-            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `arbitraggio-backup-${new Date().toISOString().split('T')[0]}.json`;
-            a.click();
-            notify('Dati esportati!', 'success');
-        });
-}
-
-function importData(input) {
-    const file = input.files[0];
-    if (!file) return;
-    
-    const reader = new FileReader();
-    reader.onload = (e) => {
-        try {
-            const data = JSON.parse(e.target.result);
-            fetch('/api/import', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(data)
-            })
-            .then(r => r.json())
-            .then(res => {
-                if (res.success) {
-                    notify('Dati importati! Ricarico...', 'success');
-                    setTimeout(() => location.reload(), 1500);
-                }
-            });
-        } catch (err) {
-            notify('File non valido', 'error');
-        }
-    };
-    reader.readAsText(file);
-}
-
-function importOnLogin(input) {
-    const file = input.files[0];
-    if (!file) return;
-    
-    const reader = new FileReader();
-    reader.onload = (e) => {
-        try {
-            const data = JSON.parse(e.target.result);
-            localStorage.setItem('pendingImport', JSON.stringify(data));
-            notify('✅ File caricato! Scegli il ruolo', 'success');
-        } catch (err) {
-            notify('❌ File non valido', 'error');
-        }
-    };
-    reader.readAsText(file);
-}
-
-// ========== SETTINGS ==========
-
-function setTheme(color) {
-    const colors = {
-        green: '#00ff88',
-        blue: '#00d9ff',
-        red: '#ff4757',
-        purple: '#a55eea',
-        orange: '#ffa502'
-    };
-    
-    document.documentElement.style.setProperty('--primary', colors[color]);
-    
-    document.querySelectorAll('.color-opt').forEach(el => {
-        el.classList.toggle('active', el.dataset.theme === color);
-    });
-    
-    State.ws.send(JSON.stringify({
-        type: 'UPDATE_SETTINGS',
-        settings: { theme: color }
-    }));
-}
-
-function saveProfile() {
-    const name = document.getElementById('settName').value.trim();
-    if (name) {
-        State.ws.send(JSON.stringify({
-            type: 'UPDATE_SETTINGS',
-            settings: { name: name }
-        }));
-        notify('Profilo aggiornato', 'success');
-    }
-}
-
-// ========== NAVIGATION ==========
-
-function showSection(id) {
-    document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
-    document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
-    document.getElementById(id).classList.add('active');
-    event.currentTarget.classList.add('active');
-    
-    if (id === 'bookmakers') {
-        renderBookmakers();
-        renderBookmakerStats();
-    }
-}
-
-function showPanel(id) {
-    document.querySelectorAll('.panel-section').forEach(s => s.classList.remove('active'));
-    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-    document.getElementById('panel-' + id).classList.add('active');
-    event.currentTarget.classList.add('active');
-}
-
-function togglePanel() {
-    document.getElementById('rPanel').classList.toggle('open');
-}
-
-function toggleSound() {
-    State.soundEnabled = !State.soundEnabled;
-    document.getElementById('soundBtn').textContent = State.soundEnabled ? '🔊' : '🔇';
-}
-
-// ========== NOTIFICATIONS ==========
-
-function notify(msg, type) {
-    const div = document.createElement('div');
-    div.className = 'notification ' + type;
-    const icon = type === 'error' ? '❌' : type === 'warning' ? '⚠️' : '✅';
-    div.innerHTML = `<b>${icon}</b> ${msg}`;
-    document.getElementById('notifications').appendChild(div);
-    setTimeout(() => div.remove(), 5000);
-}
-
-// ========== INIT ==========
-
-document.addEventListener('DOMContentLoaded', () => {
-    renderBetInputs();
+// Start
+const PORT = process.env.PORT || 3000;
+loadState();
+server.listen(PORT, () => {
+   console.log(`🚀 Server Arbitraggio Pro avviato su porta ${PORT}`);
 });
