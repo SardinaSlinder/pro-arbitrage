@@ -12,7 +12,8 @@ const State = {
     data: null,
     calc: null,
     soundEnabled: true,
-    numQuotes: 2
+    numQuotes: 2,
+    quotesData: [] // Array di {name, quote}
 };
 
 let tempName = '';
@@ -69,7 +70,7 @@ function chooseRole(role) {
     };
 }
 
-// ========== MESSAGGI ==========
+// ========== MESSAGGI SERVER ==========
 
 function handleMessage(data) {
     switch(data.type) {
@@ -93,7 +94,7 @@ function handleMessage(data) {
             
         case 'APPROVAL_REQUIRED':
             addApproval(data.approval);
-            notify('Nuova richiesta!', 'warning');
+            notify('Nuova richiesta da approvare!', 'warning');
             break;
             
         case 'APPROVAL_RESULT':
@@ -206,91 +207,140 @@ function fmt(n) {
 // ========== CALCOLATORE ==========
 
 function initCalculator() {
+    // Inizializza con 2 quote vuote
+    State.quotesData = [
+        { name: '', quote: '' },
+        { name: '', quote: '' }
+    ];
     renderQuoteInputs();
 }
 
 function setBetCount(n) {
+    console.log('setBetCount:', n);
     State.numQuotes = n;
+    
+    // Aggiorna bottoni
     document.querySelectorAll('.bet-count-btn').forEach((btn, i) => {
         btn.classList.toggle('active', i === n - 2);
     });
+    
+    // Aggiusta array dati
+    while (State.quotesData.length < n) {
+        State.quotesData.push({ name: '', quote: '' });
+    }
+    while (State.quotesData.length > n) {
+        State.quotesData.pop();
+    }
+    
     renderQuoteInputs();
 }
 
 function renderQuoteInputs() {
+    console.log('renderQuoteInputs, num:', State.numQuotes, 'data:', State.quotesData);
     const container = document.getElementById('quotesContainer');
-    if (!container) return;
+    if (!container) {
+        console.error('quotesContainer non trovato!');
+        return;
+    }
     
     container.innerHTML = '';
+    
     for (let i = 0; i < State.numQuotes; i++) {
+        const data = State.quotesData[i] || { name: '', quote: '' };
+        
         const div = document.createElement('div');
         div.className = 'quote-input-row';
         div.innerHTML = `
-            <input type="text" placeholder="Esito ${i + 1} (es: Milan)" id="name${i}">
-            <input type="number" placeholder="Quota" step="0.01" id="quote${i}">
-            ${i > 1 ? `<button onclick="removeQuote(${i})">✕</button>` : ''}
+            <input type="text" 
+                   placeholder="Esito ${i + 1} (es: Milan)" 
+                   id="name${i}" 
+                   value="${data.name}"
+                   onchange="updateQuoteData(${i}, 'name', this.value)">
+            <input type="number" 
+                   placeholder="Quota" 
+                   step="0.01" 
+                   id="quote${i}" 
+                   value="${data.quote}"
+                   onchange="updateQuoteData(${i}, 'quote', this.value)">
+            ${i >= 2 ? `<button class="btn-remove" onclick="removeQuote(${i})" title="Rimuovi">✕</button>` : ''}
         `;
         container.appendChild(div);
     }
 }
 
+function updateQuoteData(index, field, value) {
+    console.log('updateQuoteData:', index, field, value);
+    if (!State.quotesData[index]) State.quotesData[index] = {};
+    State.quotesData[index][field] = value;
+}
+
 function addQuoteField() {
+    console.log('addQuoteField, current:', State.numQuotes);
     State.numQuotes++;
+    State.quotesData.push({ name: '', quote: '' });
     renderQuoteInputs();
 }
 
 function removeQuote(index) {
-    if (State.numQuotes <= 2) return;
+    console.log('removeQuote:', index);
+    if (State.numQuotes <= 2) {
+        notify('Minimo 2 esiti richiesti', 'error');
+        return;
+    }
     State.numQuotes--;
+    State.quotesData.splice(index, 1);
     renderQuoteInputs();
 }
 
 function calculate() {
     console.log('CALCULATE clicked');
     
-    // Leggi input
+    // Aggiorna dati da input
+    for (let i = 0; i < State.numQuotes; i++) {
+        const nameEl = document.getElementById(`name${i}`);
+        const quoteEl = document.getElementById(`quote${i}`);
+        if (nameEl && quoteEl) {
+            State.quotesData[i] = {
+                name: nameEl.value || `Esito ${i + 1}`,
+                quote: parseFloat(quoteEl.value) || 0
+            };
+        }
+    }
+    
+    console.log('Dati quote:', State.quotesData);
+    
+    // Leggi altri input
     const totalCapital = parseFloat(document.getElementById('totalCapital').value) || 0;
     const balanceA = parseFloat(document.getElementById('balanceA').value) || 0;
     const balanceB = parseFloat(document.getElementById('balanceB').value) || 0;
     
-    // Leggi quote
-    const quotes = [];
-    const names = [];
-    for (let i = 0; i < State.numQuotes; i++) {
-        const q = parseFloat(document.getElementById(`quote${i}`).value);
-        const n = document.getElementById(`name${i}`).value || `Esito ${i + 1}`;
-        if (!q || q <= 1) {
-            notify(`Quota ${i + 1} non valida (deve essere > 1.00)`, 'error');
-            return;
-        }
-        quotes.push(q);
-        names.push(n);
+    // Validazione
+    const validQuotes = State.quotesData.filter(q => q.quote > 1);
+    if (validQuotes.length < 2) {
+        notify('Inserisci almeno 2 quote valide (> 1.00)', 'error');
+        return;
     }
-    
     if (!totalCapital) {
         notify('Inserisci capitale totale', 'error');
         return;
     }
     
-    console.log('Input:', {totalCapital, quotes, names, balanceA, balanceB});
-    
     // Calcolo surebet
-    const margins = quotes.map(q => 1 / q);
+    const margins = validQuotes.map(q => 1 / q.quote);
     const totalMargin = margins.reduce((a, b) => a + b, 0);
     const isSurebet = totalMargin < 1;
     
     // Puntate teoriche
-    const stakes = quotes.map(q => totalCapital / q);
+    const stakes = validQuotes.map(q => totalCapital / q.quote);
     const totalStake = stakes.reduce((a, b) => a + b, 0);
     const theoreticalProfit = totalCapital - totalStake;
     const theoreticalROI = (theoreticalProfit / totalStake) * 100;
     
     // Calcolo reale con vincoli
     const totalBalance = balanceA + balanceB;
-    const shareA = balanceA / totalBalance;
-    const shareB = balanceB / totalBalance;
+    const shareA = totalBalance > 0 ? balanceA / totalBalance : 0.5;
+    const shareB = totalBalance > 0 ? balanceB / totalBalance : 0.5;
     
-    // Verifica se possiamo coprire tutto
     const canCover = totalBalance >= totalStake;
     
     let actualStakes = [...stakes];
@@ -298,8 +348,7 @@ function calculate() {
     let actualProfit = theoreticalProfit;
     let actualROI = theoreticalROI;
     
-    if (!canCover) {
-        // Scala proporzionalmente
+    if (!canCover && totalBalance > 0) {
         const scale = totalBalance / totalStake;
         actualStakes = stakes.map(s => s * scale);
         actualTotalStake = totalBalance;
@@ -307,19 +356,16 @@ function calculate() {
         actualROI = (actualProfit / totalBalance) * 100;
     }
     
-    // Distribuzione tra A e B
-    // A copre la sua % di ogni puntata
+    // Distribuzione
     const contributionA = actualStakes.map(s => s * shareA);
     const contributionB = actualStakes.map(s => s * shareB);
-    
-    // Profitto diviso
     const profitA = actualProfit * shareA;
     const profitB = actualProfit * shareB;
     
-    // Salva calcolo
+    // Salva
     State.calc = {
-        quotes: quotes,
-        names: names,
+        names: validQuotes.map(q => q.name),
+        quotes: validQuotes.map(q => q.quote),
         stakes: actualStakes,
         totalStake: actualTotalStake,
         totalReturn: totalCapital,
@@ -336,48 +382,49 @@ function calculate() {
         canCover: canCover
     };
     
-    console.log('Calculated:', State.calc);
+    console.log('Calcolato:', State.calc);
     
-    // Mostra risultati
-    displayResults(names, quotes, actualStakes, contributionA, contributionB, profitA, profitB, isSurebet, totalMargin);
+    // Mostra
+    displayResults();
 }
 
-function displayResults(names, quotes, stakes, contribA, contribB, profitA, profitB, isSurebet, margin) {
+function displayResults() {
+    const calc = State.calc;
     const container = document.getElementById('calcResults');
     const statusDiv = document.getElementById('calcStatus');
     const totalBox = document.getElementById('totalResultBox');
     
     // Status
-    const statusColor = isSurebet ? 'var(--primary)' : 'var(--warning)';
-    const statusText = isSurebet ? '✅ SUREBET VALIDA' : '⚠️ NON È UNA SUREBET';
-    statusDiv.innerHTML = `<b style="color:${statusColor}">${statusText}</b><br>Margin: ${(margin * 100).toFixed(2)}%`;
+    const statusColor = calc.isSurebet ? 'var(--primary)' : 'var(--warning)';
+    const statusText = calc.isSurebet ? '✅ SUREBET VALIDA' : '⚠️ NON È UNA SUREBET';
+    const coverText = calc.canCover ? '' : '<br><small>(Capitale insufficiente - scalato)</small>';
+    statusDiv.innerHTML = `<b style="color:${statusColor}">${statusText}</b>${coverText}<br>Margin: ${(calc.margin * 100).toFixed(2)}%`;
     statusDiv.style.display = 'block';
     
     // Risultati per esito
     let html = '';
-    for (let i = 0; i < names.length; i++) {
-        const isWinner = stakes[i] * quotes[i] === State.calc.totalReturn;
-        const winnerClass = isWinner ? 'winner' : '';
+    for (let i = 0; i < calc.names.length; i++) {
+        const isWinner = i === 0; // Primo come riferimento
         
         html += `
-            <div class="result-box ${winnerClass}">
-                <h4>${names[i]} @${quotes[i]}</h4>
+            <div class="result-box ${isWinner ? 'winner' : ''}">
+                <h4>${calc.names[i]} @${calc.quotes[i]}</h4>
                 <div class="result-row">
                     <span>Puntata totale:</span>
-                    <b>${fmt(stakes[i])}</b>
+                    <b>${fmt(calc.stakes[i])}</b>
                 </div>
                 <div class="result-row">
                     <span>Ritorno:</span>
-                    <b>${fmt(stakes[i] * quotes[i])}</b>
+                    <b>${fmt(calc.stakes[i] * calc.quotes[i])}</b>
                 </div>
                 <hr style="border-color:var(--border);margin:10px 0">
                 <div class="result-row">
-                    <span>A paga:</span>
-                    <b>${fmt(contribA[i])}</b>
+                    <span>A paga (${(calc.shareA * 100).toFixed(0)}%):</span>
+                    <b>${fmt(calc.contributionA[i])}</b>
                 </div>
                 <div class="result-row">
-                    <span>B paga:</span>
-                    <b>${fmt(contribB[i])}</b>
+                    <span>B paga (${(calc.shareB * 100).toFixed(0)}%):</span>
+                    <b>${fmt(calc.contributionB[i])}</b>
                 </div>
             </div>
         `;
@@ -386,12 +433,12 @@ function displayResults(names, quotes, stakes, contribA, contribB, profitA, prof
     container.style.display = 'grid';
     
     // Totale
-    document.getElementById('totProfit').textContent = fmt(State.calc.totalProfit);
-    document.getElementById('totRoi').textContent = State.calc.roi.toFixed(2) + '%';
-    document.getElementById('totMargin').textContent = (margin * 100).toFixed(2);
+    document.getElementById('totProfit').textContent = fmt(calc.totalProfit);
+    document.getElementById('totRoi').textContent = calc.roi.toFixed(2) + '%';
+    document.getElementById('totMargin').textContent = (calc.margin * 100).toFixed(2);
     totalBox.style.display = 'block';
     
-    // Abilita bottoni
+    // Bottoni
     document.getElementById('btnSaveCalc').disabled = false;
     document.getElementById('btnAntiSgamo').style.display = 'inline-block';
     
@@ -404,37 +451,23 @@ function applyAntiSgamo() {
     const roundedStakes = State.calc.stakes.map(s => Math.round(s / 5) * 5);
     const totalRounded = roundedStakes.reduce((a, b) => a + b, 0);
     
-    // Ricalcola profitto con puntate arrotondate
+    // Ricalcola
     const returns = roundedStakes.map((s, i) => s * State.calc.quotes[i]);
     const minReturn = Math.min(...returns);
     const newProfit = minReturn - totalRounded;
-    const newROI = (newProfit / totalRounded) * 100;
+    const newROI = totalRounded > 0 ? (newProfit / totalRounded) * 100 : 0;
     
     State.calc.stakes = roundedStakes;
     State.calc.totalStake = totalRounded;
     State.calc.totalProfit = newProfit;
     State.calc.roi = newROI;
-    
-    // Ricalcola contribuzioni
     State.calc.contributionA = roundedStakes.map(s => s * State.calc.shareA);
     State.calc.contributionB = roundedStakes.map(s => s * State.calc.shareB);
     State.calc.profitA = newProfit * State.calc.shareA;
     State.calc.profitB = newProfit * State.calc.shareB;
     
-    // Ridisegna
-    displayResults(
-        State.calc.names,
-        State.calc.quotes,
-        State.calc.stakes,
-        State.calc.contributionA,
-        State.calc.contributionB,
-        State.calc.profitA,
-        State.calc.profitB,
-        State.calc.isSurebet,
-        State.calc.margin
-    );
-    
-    notify('🎭 Anti-Sgamo applicato (arrotondato a multipli di 5)', 'success');
+    displayResults();
+    notify('🎭 Anti-Sgamo applicato', 'success');
 }
 
 function saveCalculation() {
@@ -443,28 +476,23 @@ function saveCalculation() {
         return;
     }
     
-    // Prepara dati bet
-    const betData = {
-        description: `Surebet ${State.calc.numQuotes} esiti`,
-        stakes: State.calc.stakes,
-        quotes: State.calc.quotes,
-        names: State.calc.names,
-        totalInvested: State.calc.totalStake,
-        totalProfit: State.calc.totalProfit,
-        roi: State.calc.roi,
-        investA: State.calc.contributionA.reduce((a, b) => a + b, 0),
-        investB: State.calc.contributionB.reduce((a, b) => a + b, 0),
-        returnA: State.calc.totalReturn * State.calc.shareA,
-        returnB: State.calc.totalReturn * State.calc.shareB,
-        profitA: State.calc.profitA,
-        profitB: State.calc.profitB,
-        bookmakerA: null,
-        bookmakerB: null
-    };
+    const totalContribA = State.calc.contributionA.reduce((a, b) => a + b, 0);
+    const totalContribB = State.calc.contributionB.reduce((a, b) => a + b, 0);
     
     State.ws.send(JSON.stringify({
         type: 'REQUEST_BET',
-        betData: betData
+        betData: {
+            description: `Surebet ${State.calc.names.length} esiti (${State.calc.names.join('/')})`,
+            investA: totalContribA,
+            investB: totalContribB,
+            returnA: State.calc.totalReturn * State.calc.shareA,
+            returnB: State.calc.totalReturn * State.calc.shareB,
+            profitA: State.calc.profitA,
+            profitB: State.calc.profitB,
+            stakes: State.calc.stakes,
+            quotes: State.calc.quotes,
+            names: State.calc.names
+        }
     }));
     
     notify('Richiesta inviata per approvazione!', 'success');
@@ -514,7 +542,7 @@ function renderBookmakers() {
         return;
     }
     list.innerHTML = bms.map(bm => `
-        <div class="bm-item" style="background:var(--bg-hover);padding:15px;border-radius:8px;margin-bottom:10px;">
+        <div style="background:var(--bg-hover);padding:15px;border-radius:8px;margin-bottom:10px;">
             <h4>${bm.name}</h4>
             <p style="color:var(--text-muted);font-size:0.8rem;">${bm.id}</p>
         </div>
@@ -559,11 +587,9 @@ function addApproval(appr) {
     
     const list = document.getElementById('listApprovals');
     if (!list) return;
-    
-    // Non mostrare le proprie richieste
     if (appr.requestedBy === State.id) return;
     
-    const empty = list.querySelector('.empty');
+    const empty = list.querySelector('p');
     if (empty) empty.remove();
     
     const info = appr.type === 'BALANCE_UPDATE' 
@@ -571,7 +597,6 @@ function addApproval(appr) {
         : `Profitto: ${fmt(appr.data?.totalProfit || 0)}`;
     
     const div = document.createElement('div');
-    div.className = 'approval-item';
     div.id = `approval-${appr.id}`;
     div.style.cssText = 'background:var(--bg-hover);padding:15px;border-radius:8px;margin-bottom:10px;border-left:3px solid var(--warning);';
     div.innerHTML = `
@@ -628,13 +653,16 @@ function sendChat() {
 function addChatMessage(msg) {
     const container = document.getElementById('chatMessages');
     if (!container) return;
+    
     const div = document.createElement('div');
-    div.className = 'chat-msg ' + (msg.playerId === State.id ? 'mine' : 'other');
-    div.style.cssText = msg.playerId === State.id 
+    const isMine = msg.playerId === State.id;
+    div.style.cssText = isMine 
         ? 'align-self:flex-end;background:var(--primary);color:#000;padding:10px 15px;border-radius:15px;margin:5px 0;max-width:80%;'
         : 'align-self:flex-start;background:var(--bg-hover);padding:10px 15px;border-radius:15px;margin:5px 0;max-width:80%;';
+    
     const time = new Date(msg.timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
     div.innerHTML = `${escapeHtml(msg.text)}<div style="font-size:0.75rem;opacity:0.7;margin-top:5px;">${msg.playerName} • ${time}</div>`;
+    
     container.appendChild(div);
     div.scrollIntoView();
 }
@@ -818,6 +846,7 @@ function showSection(id) {
     if (target) target.classList.add('active');
     if (event && event.currentTarget) event.currentTarget.classList.add('active');
     if (id === 'bookmakers') renderBookmakers();
+    if (id === 'calculator') initCalculator();
 }
 
 function showPanel(id) {
@@ -844,8 +873,7 @@ function toggleSound() {
 function notify(msg, type) {
     console.log(`[${type}] ${msg}`);
     const div = document.createElement('div');
-    div.className = 'notification ' + type;
-    div.style.cssText = 'position:fixed;top:80px;right:20px;background:var(--bg-card);padding:15px 20px;border-radius:8px;border-left:4px solid ' + (type === 'error' ? 'var(--danger)' : type === 'warning' ? 'var(--warning)' : 'var(--primary)') + ';z-index:2000;box-shadow:0 5px 20px rgba(0,0,0,0.3);max-width:300px;';
+    div.style.cssText = 'position:fixed;top:80px;right:20px;background:var(--bg-card);padding:15px 20px;border-radius:8px;border-left:4px solid ' + (type === 'error' ? 'var(--danger)' : type === 'warning' ? 'var(--warning)' : 'var(--primary)') + ';z-index:2000;box-shadow:0 5px 20px rgba(0,0,0,0.3);max-width:300px;animation:slideIn 0.3s;';
     const icon = type === 'error' ? '❌' : type === 'warning' ? '⚠️' : '✅';
     div.innerHTML = `<b>${icon}</b> ${msg}`;
     document.body.appendChild(div);
@@ -855,11 +883,5 @@ function notify(msg, type) {
 // ========== INIT ==========
 
 document.addEventListener('DOMContentLoaded', () => {
-    console.log('App loaded');
-    // Inizializza subito il calcolatore per test
-    setTimeout(() => {
-        if (document.getElementById('quotesContainer')) {
-            renderQuoteInputs();
-        }
-    }, 100);
+    console.log('App loaded, v1.0');
 });
