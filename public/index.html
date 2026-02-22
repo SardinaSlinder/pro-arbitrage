@@ -61,7 +61,7 @@
         
         .quote-input-row {
             display: grid;
-            grid-template-columns: 2fr 1fr 1fr;
+            grid-template-columns: 2fr 1fr auto;
             gap: 10px;
             margin-bottom: 10px;
             align-items: center;
@@ -73,15 +73,21 @@
             border: 1px solid var(--border);
             border-radius: 8px;
             color: var(--text);
+            font-size: 1rem;
         }
         
-        .quote-input-row button {
-            padding: 12px;
+        .btn-remove {
+            padding: 12px 15px;
             background: var(--danger);
             border: none;
             border-radius: 8px;
             color: white;
             cursor: pointer;
+            font-weight: bold;
+        }
+        
+        .btn-remove:hover {
+            opacity: 0.8;
         }
         
         #calcStatus {
@@ -108,6 +114,11 @@
             color: var(--text);
             cursor: pointer;
             font-weight: bold;
+            transition: all 0.2s;
+        }
+        
+        .bet-count-btn:hover {
+            border-color: var(--primary);
         }
         
         .bet-count-btn.active {
@@ -274,7 +285,7 @@
             <section id="calculator" class="section">
                 <h2>🧮 Calcolatore Surebet</h2>
                 
-                <!-- Selettore numero quote -->
+                <!-- Selettore numero esiti -->
                 <div class="card">
                     <h3>Numero di Esiti</h3>
                     <div class="bet-count-selector">
@@ -287,16 +298,16 @@
 
                 <!-- Input Quote -->
                 <div class="card">
-                    <h3>📊 Inserisci le Quote</h3>
+                    <h3>📊 Quote e Nomi Esiti</h3>
                     <div id="quotesContainer">
-                        <!-- Generato da JS -->
+                        <!-- Generato da JavaScript -->
                     </div>
-                    <button class="btn btn-secondary" onclick="addQuoteField()" style="margin-top:10px;">
+                    <button class="btn btn-secondary" onclick="addQuoteField()" style="margin-top:15px;width:100%;">
                         + Aggiungi Esito
                     </button>
                 </div>
 
-                <!-- Capitale e Saldi -->
+                <!-- Capitale -->
                 <div class="card">
                     <h3>💰 Capitale e Saldi</h3>
                     
@@ -325,9 +336,7 @@
                 <div id="calcStatus" style="display:none;"></div>
 
                 <!-- Risultati -->
-                <div id="calcResults" class="calc-results" style="display:none;">
-                    <!-- Generato da JS -->
-                </div>
+                <div id="calcResults" class="calc-results" style="display:none;"></div>
 
                 <!-- Totale -->
                 <div class="card" id="totalResultBox" style="display:none;margin-top:20px;text-align:center;">
@@ -353,7 +362,7 @@
 
             <!-- STORICO -->
             <section id="history" class="section">
-                <h2>📜 Storico</h2>
+                <h2>📜 Storico Operazioni</h2>
                 <div class="card table-wrap">
                     <table>
                         <thead>
@@ -379,7 +388,7 @@
                 <h2>🏢 Bookmakers</h2>
                 <div class="card">
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
-                        <h3>Lista</h3>
+                        <h3>Lista Bookmakers</h3>
                         <button class="btn btn-primary" onclick="addBookmaker()">+ Aggiungi</button>
                     </div>
                     <div id="bmList"><p style="color:var(--text-muted)">Nessun bookmaker</p></div>
@@ -399,7 +408,7 @@
                         </div>
                     </div>
                     <div class="card">
-                        <h3>👤 Nome</h3>
+                        <h3>👤 Profilo</h3>
                         <input type="text" id="settName" placeholder="Nuovo nome">
                         <button class="btn btn-primary" onclick="saveProfile()" style="margin-top:10px;">Salva</button>
                     </div>
