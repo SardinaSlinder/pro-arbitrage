@@ -8,92 +8,98 @@
 </head>
 <body>
     <!-- LOGIN -->
-<div id="loginScreen" class="login-screen">
-    <div class="login-box">
-        <h1>⚡ Arbitraggio Pro</h1>
-        
-        <div id="loginStep1">
-            <p>Inserisci il tuo nome</p>
-            <input type="text" id="loginName" placeholder="Il tuo nome" maxlength="20">
-            <button onclick="goToStep2()">Avanti →</button>
-        </div>
-        
-        <div id="loginStep2" style="display: none;">
-            <p>Scegli il tuo ruolo</p>
-            <div class="role-choices">
-                <button class="role-btn" onclick="chooseRole('A')" id="btnA">
-                    <span class="role-icon">🟢</span>
-                    <span class="role-name">Giocatore A</span>
-                    <span class="role-status" id="statusA">Libero</span>
-                </button>
-                <button class="role-btn" onclick="chooseRole('B')" id="btnB">
-                    <span class="role-icon">🔵</span>
-                    <span class="role-name">Giocatore B</span>
-                    <span class="role-status" id="statusB">Libero</span>
-                </button>
-                <button class="role-btn auto" onclick="chooseRole('AUTO')">
-                    <span class="role-icon">🎲</span>
-                    <span class="role-name">Automatico</span>
-                    <span class="role-status">Assegna disponibile</span>
-                </button>
+    <div id="loginScreen" class="login-screen">
+        <div class="login-box">
+            <h1>⚡ Arbitraggio Pro</h1>
+            
+            <div id="loginStep1">
+                <p>Inserisci il tuo nome</p>
+                <input type="text" id="loginName" placeholder="Il tuo nome" maxlength="20">
+                <button onclick="goToStep2()">Avanti →</button>
             </div>
-            <button class="btn-back" onclick="backToStep1()">← Indietro</button>
-        </div>
-        
-        <div id="loginError" class="error"></div>
-        
-        <div class="login-info">
-            <p>📥 Hai un backup?</p>
-            <input type="file" id="importFile" accept=".json" onchange="importOnLogin(this)" style="display: none;">
-            <button class="btn-import" onclick="document.getElementById('importFile').click()">📤 Importa Dati</button>
+            
+            <div id="loginStep2" style="display: none;">
+                <p>Scegli il tuo ruolo</p>
+                <div class="role-choices">
+                    <button class="role-btn" onclick="chooseRole('A')" id="btnRoleA">
+                        <span class="role-icon">🟢</span>
+                        <span class="role-name">Giocatore A</span>
+                        <span class="role-status" id="statusRoleA">Libero</span>
+                    </button>
+                    <button class="role-btn" onclick="chooseRole('B')" id="btnRoleB">
+                        <span class="role-icon">🔵</span>
+                        <span class="role-name">Giocatore B</span>
+                        <span class="role-status" id="statusRoleB">Libero</span>
+                    </button>
+                    <button class="role-btn auto" onclick="chooseRole('AUTO')">
+                        <span class="role-icon">🎲</span>
+                        <span class="role-name">Automatico</span>
+                        <span class="role-status">Assegna disponibile</span>
+                    </button>
+                </div>
+                <button class="btn-back" onclick="backToStep1()">← Indietro</button>
+            </div>
+            
+            <div id="loginError" class="error"></div>
+            
+            <div class="login-info">
+                <p>📥 Hai un backup?</p>
+                <input type="file" id="importFileLogin" accept=".json" onchange="importOnLogin(this)" style="display: none;">
+                <button class="btn-import" onclick="document.getElementById('importFileLogin').click()">📤 Importa Dati</button>
+            </div>
         </div>
     </div>
-</div>
-    <!-- APP -->
-    <div id="mainApp" class="app" style="display: none;">
-        <!-- Header -->
+
+    <!-- MAIN APP -->
+    <div id="mainApp" class="app-container" style="display: none;">
+        
+        <!-- HEADER -->
         <header class="header">
             <div class="logo">⚡ Arbitraggio Pro</div>
-            <div class="center">
-                <span class="status" id="connStatus">⚫</span>
-                <span class="badge" id="playerBadge">-</span>
+            <div class="header-center">
+                <span class="status-dot" id="connStatus"></span>
+                <span class="player-badge" id="playerBadge">-</span>
             </div>
-            <button class="btn-menu" onclick="togglePanel()">☰</button>
+            <div class="header-actions">
+                <button class="btn-icon" onclick="toggleSound()" id="soundBtn">🔊</button>
+                <button class="btn-icon" onclick="togglePanel()">☰</button>
+            </div>
         </header>
 
-        <!-- Sidebar -->
+        <!-- SIDEBAR -->
         <nav class="sidebar" id="sidebar">
             <div class="nav-section">
                 <div class="nav-title">Menu</div>
-                <button class="nav-btn active" onclick="show('dashboard')">
-                    <span>📊</span> Dashboard
+                <button class="nav-btn active" onclick="showSection('dashboard')">
+                    <span class="icon">📊</span> Dashboard
                 </button>
-                <button class="nav-btn" onclick="show('calc')">
-                    <span>🧮</span> Calcolatore
+                <button class="nav-btn" onclick="showSection('calcolatore')">
+                    <span class="icon">🧮</span> Calcolatore
                 </button>
-                <button class="nav-btn" onclick="show('history')">
-                    <span>📜</span> Storico
+                <button class="nav-btn" onclick="showSection('bookmakers')">
+                    <span class="icon">🏢</span> Bookmakers
                 </button>
-                <button class="nav-btn" onclick="show('stats')">
-                    <span>📈</span> Statistiche
+                <button class="nav-btn" onclick="showSection('storico')">
+                    <span class="icon">📜</span> Storico
                 </button>
-                <button class="nav-btn" onclick="show('sim')">
-                    <span>🔮</span> Simulazione
+                <button class="nav-btn" onclick="showSection('statistiche')">
+                    <span class="icon">📈</span> Statistiche
                 </button>
-                <button class="nav-btn" onclick="show('settings')">
-                    <span>⚙️</span> Impostazioni
+                <button class="nav-btn" onclick="showSection('impostazioni')">
+                    <span class="icon">⚙️</span> Impostazioni
                 </button>
             </div>
         </nav>
 
-        <!-- Main -->
-        <main class="main" id="mainContent">
+        <!-- MAIN CONTENT -->
+        <main class="main-content">
             
             <!-- DASHBOARD -->
             <section class="section active" id="dashboard">
-                <h2>Dashboard Conti</h2>
+                <h2>📊 Dashboard Conti</h2>
                 
                 <div class="players-grid">
+                    <!-- Player A -->
                     <div class="player-card a">
                         <div class="p-header">
                             <div class="avatar">A</div>
@@ -107,12 +113,22 @@
                             <div class="amount" id="balA">€0.00</div>
                         </div>
                         <div class="stats">
-                            <div><span>Inv.</span><b id="invA">€0</b></div>
-                            <div><span>Vinto</span><b id="wonA">€0</b></div>
-                            <div><span>Prof.</span><b id="profA" class="pos">€0</b></div>
+                            <div>
+                                <span>Investito</span>
+                                <b id="invA">€0.00</b>
+                            </div>
+                            <div>
+                                <span>Vinto</span>
+                                <b id="wonA">€0.00</b>
+                            </div>
+                            <div>
+                                <span>Profitto</span>
+                                <b id="profA" class="pos">€0.00</b>
+                            </div>
                         </div>
                     </div>
 
+                    <!-- Player B -->
                     <div class="player-card b">
                         <div class="p-header">
                             <div class="avatar">B</div>
@@ -126,249 +142,312 @@
                             <div class="amount" id="balB">€0.00</div>
                         </div>
                         <div class="stats">
-                            <div><span>Inv.</span><b id="invB">€0</b></div>
-                            <div><span>Vinto</span><b id="wonB">€0</b></div>
-                            <div><span>Prof.</span><b id="profB" class="pos">€0</b></div>
+                            <div>
+                                <span>Investito</span>
+                                <b id="invB">€0.00</b>
+                            </div>
+                            <div>
+                                <span>Vinto</span>
+                                <b id="wonB">€0.00</b>
+                            </div>
+                            <div>
+                                <span>Profitto</span>
+                                <b id="profB" class="pos">€0.00</b>
+                            </div>
                         </div>
                     </div>
                 </div>
 
                 <div class="actions">
-                    <button class="btn prim" onclick="modal('funds')">💰 Aggiungi Fondi</button>
-                    <button class="btn prim" onclick="modal('bet')">🎲 Nuova Bet</button>
-                    <button class="btn sec" onclick="settlement()">⚖️ Calcola Pareggio</button>
+                    <button class="btn btn-primary" onclick="openModal('funds')">
+                        <span>💰</span>
+                        <div>
+                            <strong>Aggiungi Fondi</strong>
+                            <small>Richiede approvazione</small>
+                        </div>
+                    </button>
+                    <button class="btn btn-primary" onclick="openModal('bet')">
+                        <span>🎲</span>
+                        <div>
+                            <strong>Nuova Bet</strong>
+                            <small>Registra operazione</small>
+                        </div>
+                    </button>
+                    <button class="btn btn-secondary" onclick="calculateSettlement()">
+                        <span>⚖️</span>
+                        <div>
+                            <strong>Calcola Pareggio</strong>
+                            <small>Chi deve dare a chi</small>
+                        </div>
+                    </button>
                 </div>
 
                 <div class="settlement-box" id="settleBox" style="display: none;">
-                    <h3>⚖️ Situazione Conti</h3>
+                    <div class="settle-icon">⚖️</div>
+                    <h3>Situazione Conti</h3>
                     <p id="settleText"></p>
-                    <div class="amount" id="settleAmount"></div>
-                    <button class="btn prim" onclick="confirmSettle()">✅ Conferma Pagamento</button>
+                    <div class="settle-amount" id="settleAmount"></div>
+                    <button class="btn btn-primary" onclick="confirmSettlement()">✅ Conferma Pagamento</button>
                 </div>
             </section>
 
             <!-- CALCOLATORE -->
-            <section class="section" id="calc">
+            <section class="section" id="calcolatore">
                 <h2>🧮 Calcolatore Surebet</h2>
                 
-                <div class="calc-layout">
+                <div class="calc-container">
                     <div class="calc-left">
-                        <div class="form">
-                            <label>Esiti</label>
-                            <div class="radio">
-                                <button class="r-btn active" onclick="setBets(2)">2</button>
-                                <button class="r-btn" onclick="setBets(3)">3</button>
+                        <div class="card">
+                            <h3>Configurazione</h3>
+                            
+                            <div class="form-group">
+                                <label>Numero Esiti</label>
+                                <div class="btn-group">
+                                    <button class="btn-toggle active" onclick="setBetCount(2)">2 Esiti</button>
+                                    <button class="btn-toggle" onclick="setBetCount(3)">3 Esiti</button>
+                                </div>
                             </div>
-                            
-                            <label>Capitale (€)</label>
-                            <input type="number" id="capTotal" placeholder="1000">
-                            
-                            <label>Divisione</label>
-                            <select id="splitMode" onchange="splitChange()">
-                                <option value="equal">50/50</option>
-                                <option value="prop">Proporzionale</option>
-                                <option value="custom">Custom</option>
-                            </select>
-                            
-                            <div id="customSplit" style="display: none;">
-                                <label>A: <span id="valA">50</span>%</label>
+
+                            <div class="form-group">
+                                <label>Capitale Totale (€)</label>
+                                <input type="number" id="calcTotal" placeholder="1000" step="0.01">
+                            </div>
+
+                            <div class="form-group">
+                                <label>Modalità Divisione</label>
+                                <select id="splitMode" onchange="updateSplitMode()">
+                                    <option value="equal">50% / 50%</option>
+                                    <option value="proportional">Proporzionale al capitale</option>
+                                    <option value="custom">Personalizzata</option>
+                                </select>
+                            </div>
+
+                            <div class="form-group" id="customSplitBox" style="display: none;">
+                                <label>Percentuale A: <span id="splitVal">50%</span></label>
                                 <input type="range" min="0" max="100" value="50" 
-                                    oninput="document.getElementById('valA').textContent=this.value;
-                                            document.getElementById('valB').textContent=100-this.value;">
-                                <label>B: <span id="valB">50</span>%</label>
+                                    oninput="document.getElementById('splitVal').textContent = this.value + '%'">
                             </div>
                         </div>
 
-                        <div id="betsContainer"></div>
-                        
-                        <button class="btn prim full" onclick="calculate()">🚀 Calcola</button>
-                        <button class="btn btn-secondary full" onclick="applyAntiSgamo()" id="btnAntiSgamo" style="display: none; margin-top: 10px;">🎭 Anti-Sgamo (Arrotonda)</button>
-                        <div class="anti-sgamo-info" id="infoAntiSgamo" style="display: none; color: var(--tm); font-size: 0.85rem; margin-top: 5px;">
-                            123,45€ → 120€ | 127,89€ → 130€ (meno sospetto)
+                        <div class="card">
+                            <h3>Quote</h3>
+                            <div id="betInputs"></div>
                         </div>
+
+                        <button class="btn btn-primary btn-large" onclick="calculate()">
+                            🚀 Calcola
+                        </button>
                     </div>
 
                     <div class="calc-right">
-                        <h3>Risultati</h3>
-                        <div class="result-box" id="resA">
-                            <h4>A</h4>
-                            <p>Inserisci dati...</p>
+                        <div class="card results">
+                            <h3>📊 Risultati</h3>
+                            
+                            <div class="result-box" id="resA">
+                                <h4>🟢 Giocatore A</h4>
+                                <p class="empty">Inserisci dati e calcola</p>
+                            </div>
+
+                            <div class="result-box" id="resB">
+                                <h4>🔵 Giocatore B</h4>
+                                <p class="empty">Inserisci dati e calcola</p>
+                            </div>
+
+                            <div class="result-total">
+                                <div>Profitto Totale: <b id="totProfit">€0.00</b></div>
+                                <div>ROI: <b id="totRoi">0%</b></div>
+                            </div>
+
+                            <button class="btn btn-secondary btn-large" onclick="applyAntiSgamo()" id="btnAntiSgamo" style="display: none;">
+                                🎭 Anti-Sgamo
+                            </button>
+                            <p class="anti-sgamo-text" id="textAntiSgamo" style="display: none;">
+                                Arrotonda a decine: 123€→120€, 127€→130€
+                            </p>
+
+                            <button class="btn btn-primary btn-large" onclick="saveCalculation()" id="btnSaveCalc" disabled>
+                                💾 Salva Operazione
+                            </button>
                         </div>
-                        <div class="result-box" id="resB">
-                            <h4>B</h4>
-                            <p>Inserisci dati...</p>
-                        </div>
-                        <div class="total-box">
-                            <div>Profitto: <b id="totProfit">€0</b></div>
-                            <div>ROI: <b id="totRoi">0%</b></div>
-                        </div>
-                        <button class="btn prim full" onclick="saveCalc()" id="btnSave" disabled>
-                            💾 Salva Operazione
-                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- BOOKMAKERS -->
+            <section class="section" id="bookmakers">
+                <h2>🏢 Bookmakers</h2>
+                
+                <div class="card">
+                    <div class="bm-header">
+                        <h3>Gestione Bookmakers</h3>
+                        <button class="btn btn-primary" onclick="addBookmaker()">+ Aggiungi</button>
+                    </div>
+                    
+                    <div class="bm-list" id="bmList">
+                        <!-- Popolato da JS -->
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h3>📊 Statistiche per Bookmaker</h3>
+                    <div class="bm-stats-grid" id="bmStats">
+                        <!-- Popolato da JS -->
                     </div>
                 </div>
             </section>
 
             <!-- STORICO -->
-            <section class="section" id="history">
-                <h2>📜 Storico</h2>
-                <div class="table-wrap">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Data</th>
-                                <th>Tipo</th>
-                                <th>Inv. A</th>
-                                <th>Inv. B</th>
-                                <th>Prof. A</th>
-                                <th>Prof. B</th>
-                                <th>Tot</th>
-                            </tr>
-                        </thead>
-                        <tbody id="histBody"></tbody>
-                    </table>
+            <section class="section" id="storico">
+                <h2>📜 Storico Operazioni</h2>
+                
+                <div class="card">
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Data</th>
+                                    <th>Evento</th>
+                                    <th>Book A</th>
+                                    <th>Book B</th>
+                                    <th>Inv. A</th>
+                                    <th>Inv. B</th>
+                                    <th>Prof. A</th>
+                                    <th>Prof. B</th>
+                                    <th>Totale</th>
+                                </tr>
+                            </thead>
+                            <tbody id="histBody">
+                                <!-- Popolato da JS -->
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </section>
 
             <!-- STATISTICHE -->
-            <section class="section" id="stats">
+            <section class="section" id="statistiche">
                 <h2>📈 Statistiche</h2>
+                
                 <div class="stats-grid">
-                    <div class="stat-box">
-                        <div class="num" id="stOps">0</div>
-                        <div class="lab">Operazioni</div>
+                    <div class="stat-card">
+                        <div class="stat-num" id="statOps">0</div>
+                        <div class="stat-label">Operazioni</div>
                     </div>
-                    <div class="stat-box">
-                        <div class="num" id="stAvg">€0</div>
-                        <div class="lab">Profitto Medio</div>
+                    <div class="stat-card">
+                        <div class="stat-num" id="statAvg">€0.00</div>
+                        <div class="stat-label">Profitto Medio</div>
                     </div>
-                    <div class="stat-box">
-                        <div class="num" id="stRoi">0%</div>
-                        <div class="lab">ROI</div>
+                    <div class="stat-card">
+                        <div class="stat-num" id="statRoi">0%</div>
+                        <div class="stat-label">ROI Medio</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-num" id="statBal">100%</div>
+                        <div class="stat-label">Equilibrio</div>
                     </div>
                 </div>
-                
-                <div class="balance-check">
-                    <h3>⚖️ Controllo Equilibrio</h3>
-                    <div class="bar">
-                        <div class="fill" id="balBar" style="width: 50%"></div>
-                    </div>
-                    <div class="labels">
-                        <span>Avanti A</span>
-                        <span>Parità</span>
-                        <span>Avanti B</span>
-                    </div>
-                    <div id="balAlert"></div>
-                </div>
-            </section>
 
-            <!-- SIMULAZIONE -->
-            <section class="section" id="sim">
-                <h2>🔮 Simulazione</h2>
-                <div class="sim-form">
-                    <div class="row">
-                        <label>Inizio A: <input type="number" id="simA" value="100"></label>
-                        <label>Inizio B: <input type="number" id="simB" value="100"></label>
+                <div class="card">
+                    <h3>⚖️ Controllo Equilibrio</h3>
+                    <div class="balance-bar">
+                        <div class="bar-fill" id="balFill" style="width: 50%"></div>
                     </div>
-                    <div class="row">
-                        <label>Profitto %: <input type="number" id="simProf" value="3" step="0.1"></label>
-                        <label>Op/giorno: <input type="number" id="simFreq" value="2"></label>
-                    </div>
-                    <div class="row">
-                        <label>Giorni: <input type="number" id="simDays" value="30"></label>
-                        <label>Obiettivo €: <input type="number" id="simTarget" value="500"></label>
-                    </div>
-                    <button class="btn prim" onclick="runSim()">Avvia</button>
-                </div>
-                
-                <div id="simRes" style="display: none;">
-                    <div class="sim-grid">
-                        <div>
-                            <h4>A Finale: <span id="simFinA"></span></h4>
-                            <p>Giorno 500€: <span id="simD500A"></span></p>
-                            <p>Giorno 1000€: <span id="simD1000A"></span></p>
-                        </div>
-                        <div>
-                            <h4>B Finale: <span id="simFinB"></span></h4>
-                            <p>Giorno 500€: <span id="simD500B"></span></p>
-                            <p>Giorno 1000€: <span id="simD1000B"></span></p>
-                        </div>
+                    <div class="bar-labels">
+                        <span>Avanti A</span>
+                        <span>Perfetto</span>
+                        <span>Avanti B</span>
                     </div>
                 </div>
             </section>
 
             <!-- IMPOSTAZIONI -->
-            <section class="section" id="settings">
+            <section class="section" id="impostazioni">
                 <h2>⚙️ Impostazioni</h2>
                 
-                <div class="set-card">
-                    <h3>Tema</h3>
-                    <div class="colors">
-                        <div class="c-opt active" style="background: #00ff88" onclick="theme('green')"></div>
-                        <div class="c-opt" style="background: #00d9ff" onclick="theme('blue')"></div>
-                        <div class="c-opt" style="background: #ff4757" onclick="theme('red')"></div>
-                        <div class="c-opt" style="background: #a55eea" onclick="theme('purple')"></div>
+                <div class="settings-grid">
+                    <div class="card">
+                        <h3>🎨 Tema Colori</h3>
+                        <div class="color-picker">
+                            <div class="color-opt active" style="background: #00ff88" onclick="setTheme('green')" data-theme="green"></div>
+                            <div class="color-opt" style="background: #00d9ff" onclick="setTheme('blue')" data-theme="blue"></div>
+                            <div class="color-opt" style="background: #ff4757" onclick="setTheme('red')" data-theme="red"></div>
+                            <div class="color-opt" style="background: #a55eea" onclick="setTheme('purple')" data-theme="purple"></div>
+                            <div class="color-opt" style="background: #ffa502" onclick="setTheme('orange')" data-theme="orange"></div>
+                        </div>
                     </div>
-                </div>
 
-                <div class="set-card">
-                    <h3>Profilo</h3>
-                    <input type="text" id="setName" placeholder="Nome">
-                    <button class="btn prim" onclick="saveName()">Salva</button>
-                </div>
+                    <div class="card">
+                        <h3>👤 Profilo</h3>
+                        <div class="form-group">
+                            <label>Il tuo nome</label>
+                            <input type="text" id="settName" placeholder="Nome">
+                        </div>
+                        <button class="btn btn-primary" onclick="saveProfile()">Salva</button>
+                    </div>
 
-                <div class="set-card">
-                    <h3>Dati</h3>
-                    <button class="btn sec" onclick="exportData()">📥 Esporta JSON</button>
+                    <div class="card">
+                        <h3>💾 Backup Dati</h3>
+                        <button class="btn btn-primary btn-full" onclick="exportData()">📥 Esporta JSON</button>
+                        <input type="file" id="importFile" accept=".json" onchange="importData(this)" style="display: none;">
+                        <button class="btn btn-secondary btn-full" onclick="document.getElementById('importFile').click()" style="margin-top: 10px;">
+                            📤 Importa JSON
+                        </button>
+                    </div>
                 </div>
             </section>
         </main>
 
-        <!-- Right Panel -->
-        <aside class="r-panel" id="rPanel">
-            <div class="tabs">
-                <button class="t-btn active" onclick="panelTab('app')">🔔<span id="badApp">0</span></button>
-                <button class="t-btn" onclick="panelTab('chat')">💬</button>
-                <button class="t-btn" onclick="panelTab('log')">📋</button>
+        <!-- RIGHT PANEL -->
+        <aside class="right-panel" id="rPanel">
+            <div class="panel-tabs">
+                <button class="tab-btn active" onclick="showPanel('approvals')">
+                    🔔<span class="badge" id="badgeApp">0</span>
+                </button>
+                <button class="tab-btn" onclick="showPanel('chat')">💬</button>
+                <button class="tab-btn" onclick="showPanel('log')">📋</button>
             </div>
-            
-            <div class="p-content">
-                <div class="p-sec active" id="p-app">
+
+            <div class="panel-content">
+                <!-- APPROVALS -->
+                <div class="panel-section active" id="panel-approvals">
                     <h4>Richieste</h4>
-                    <div id="appList"></div>
+                    <div id="listApprovals" class="list">
+                        <p class="empty">Nessuna richiesta</p>
+                    </div>
                 </div>
-                <div class="p-sec" id="p-chat">
-                    <div class="msgs" id="chatMsgs"></div>
-                    <div class="inp">
-                        <input type="text" id="chatInp" placeholder="Messaggio..." onkeypress="if(event.key==='Enter')sendChat()">
+
+                <!-- CHAT -->
+                <div class="panel-section" id="panel-chat">
+                    <div class="chat-messages" id="chatMessages"></div>
+                    <div class="chat-input">
+                        <input type="text" id="chatInput" placeholder="Messaggio..." onkeypress="if(event.key==='Enter')sendChat()">
                         <button onclick="sendChat()">➤</button>
                     </div>
                 </div>
-                <div class="p-sec" id="p-log">
-                    <div id="logList"></div>
+
+                <!-- LOG -->
+                <div class="panel-section" id="panel-log">
+                    <div id="logContent" class="log-list"></div>
                 </div>
             </div>
         </aside>
     </div>
 
-    <!-- Modal -->
-    <div id="modal" class="modal" style="display: none;">
-        <div class="m-box">
-            <h3 id="mTitle">Titolo</h3>
-            <div id="mBody"></div>
-            <div class="m-foot">
-                <button class="btn sec" onclick="closeModal()">Annulla</button>
-                <button class="btn prim" onclick="mConfirm()">OK</button>
+    <!-- MODAL -->
+    <div class="modal" id="modal" style="display: none;">
+        <div class="modal-box">
+            <h3 id="modalTitle">Titolo</h3>
+            <div id="modalBody"></div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeModal()">Annulla</button>
+                <button class="btn btn-primary" onclick="confirmModal()">Conferma</button>
             </div>
         </div>
     </div>
 
-    <!-- Notifiche -->
-    <div id="notifs"></div>
+    <!-- NOTIFICATIONS -->
+    <div id="notifications"></div>
 
     <script src="/js/app.js"></script>
 </body>
-
 </html>
-
-
