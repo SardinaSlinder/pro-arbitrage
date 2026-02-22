@@ -6,16 +6,9 @@
     <title>Arbitraggio Pro</title>
     <link rel="stylesheet" href="/css/style.css">
     <style>
-        /* FIX VISIBILITÀ CALCOLATORE */
+        /* FIX VISIBILITÀ */
         .section { display: none; }
         .section.active { display: block !important; }
-        
-        .calc-results { 
-            display: grid; 
-            grid-template-columns: 1fr 1fr; 
-            gap: 20px; 
-            margin-top: 20px; 
-        }
         
         .form-row {
             display: grid;
@@ -27,15 +20,29 @@
             grid-template-columns: 1fr 1fr;
         }
         
+        .calc-results {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+        
         .result-box {
             background: var(--bg-hover);
             padding: 20px;
             border-radius: 12px;
+            border: 2px solid var(--border);
+        }
+        
+        .result-box.winner {
+            border-color: var(--primary);
+            background: rgba(0, 255, 136, 0.05);
         }
         
         .result-box h4 {
             color: var(--primary);
             margin-bottom: 15px;
+            font-size: 1.1rem;
         }
         
         .result-row {
@@ -45,37 +52,92 @@
             font-size: 0.95rem;
         }
         
+        .result-row.profit {
+            border-top: 1px solid var(--border);
+            padding-top: 10px;
+            margin-top: 10px;
+            font-size: 1.1rem;
+        }
+        
+        .quote-input-row {
+            display: grid;
+            grid-template-columns: 2fr 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 10px;
+            align-items: center;
+        }
+        
+        .quote-input-row input {
+            padding: 12px;
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text);
+        }
+        
+        .quote-input-row button {
+            padding: 12px;
+            background: var(--danger);
+            border: none;
+            border-radius: 8px;
+            color: white;
+            cursor: pointer;
+        }
+        
         #calcStatus {
             padding: 15px;
             background: var(--bg-hover);
             border-radius: 12px;
             font-size: 1.1rem;
             margin: 20px 0;
+            text-align: center;
+        }
+        
+        .bet-count-selector {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        
+        .bet-count-btn {
+            flex: 1;
+            padding: 15px;
+            background: var(--bg-input);
+            border: 2px solid var(--border);
+            border-radius: 8px;
+            color: var(--text);
+            cursor: pointer;
+            font-weight: bold;
+        }
+        
+        .bet-count-btn.active {
+            background: var(--primary);
+            color: #000;
+            border-color: var(--primary);
         }
         
         @media (max-width: 768px) {
             .form-row.two-cols,
-            .calc-results {
+            .quote-input-row {
                 grid-template-columns: 1fr;
             }
         }
     </style>
 </head>
 <body>
-    <!-- LOGIN SCREEN -->
+    <!-- LOGIN -->
     <div id="loginScreen" class="login-screen">
         <div class="login-box">
             <h1>🎯 Arbitraggio Pro</h1>
             <p>Gestione capitale surebet</p>
             
-            <!-- Step 1: Nome -->
             <div id="loginStep1">
                 <input type="text" id="loginName" placeholder="Il tuo nome" maxlength="20">
                 <div id="loginError" class="error"></div>
                 <button onclick="goToStep2()">Avanti →</button>
                 
                 <div class="login-info">
-                    <p>Oppure importa dati precedenti:</p>
+                    <p>Oppure importa dati:</p>
                     <label class="btn-import">
                         📁 Carica Backup
                         <input type="file" accept=".json" onchange="importOnLogin(this)" style="display:none;">
@@ -83,7 +145,6 @@
                 </div>
             </div>
             
-            <!-- Step 2: Scelta Ruolo -->
             <div id="loginStep2" style="display:none;">
                 <h3>Scegli il tuo ruolo</h3>
                 <div class="role-choices">
@@ -111,7 +172,6 @@
     <!-- MAIN APP -->
     <div id="mainApp" class="app-container" style="display:none;">
         
-        <!-- HEADER -->
         <header class="header">
             <div class="logo">🎯 Arbitraggio Pro</div>
             <div class="header-center">
@@ -122,7 +182,6 @@
             <button class="btn-icon" onclick="togglePanel()">☰</button>
         </header>
 
-        <!-- SIDEBAR -->
         <nav class="sidebar">
             <div class="nav-section">
                 <div class="nav-title">Menu</div>
@@ -144,7 +203,6 @@
             </div>
         </nav>
 
-        <!-- MAIN CONTENT -->
         <main class="main-content">
             
             <!-- DASHBOARD -->
@@ -208,7 +266,7 @@
                     <h3>Calcolo Settlement</h3>
                     <div id="settleText"></div>
                     <div class="settle-amount" id="settleAmount"></div>
-                    <button class="btn btn-primary" onclick="confirmSettlement()">Conferma Pagamento</button>
+                    <button class="btn btn-primary" onclick="confirmSettlement()">Conferma</button>
                 </div>
             </section>
 
@@ -216,30 +274,36 @@
             <section id="calculator" class="section">
                 <h2>🧮 Calcolatore Surebet</h2>
                 
-                <!-- Input Dati -->
+                <!-- Selettore numero quote -->
                 <div class="card">
-                    <h3>📊 Dati Operazione</h3>
-                    
-                    <div class="form-group">
-                        <label>💰 Capitale Totale Disponibile (€)</label>
-                        <input type="number" id="totalCapital" placeholder="Es: 1000" step="0.01">
-                    </div>
-                    
-                    <div class="form-row two-cols">
-                        <div class="form-group">
-                            <label>📈 Quota Bookmaker A</label>
-                            <input type="number" id="quotaA" placeholder="Es: 2.40" step="0.01">
-                        </div>
-                        <div class="form-group">
-                            <label>📈 Quota Bookmaker B</label>
-                            <input type="number" id="quotaB" placeholder="Es: 2.60" step="0.01">
-                        </div>
+                    <h3>Numero di Esiti</h3>
+                    <div class="bet-count-selector">
+                        <button class="bet-count-btn active" onclick="setBetCount(2)">2 Esiti</button>
+                        <button class="bet-count-btn" onclick="setBetCount(3)">3 Esiti</button>
+                        <button class="bet-count-btn" onclick="setBetCount(4)">4 Esiti</button>
+                        <button class="bet-count-btn" onclick="setBetCount(5)">5 Esiti</button>
                     </div>
                 </div>
 
-                <!-- Saldi -->
+                <!-- Input Quote -->
                 <div class="card">
-                    <h3>💵 Saldi Attuali</h3>
+                    <h3>📊 Inserisci le Quote</h3>
+                    <div id="quotesContainer">
+                        <!-- Generato da JS -->
+                    </div>
+                    <button class="btn btn-secondary" onclick="addQuoteField()" style="margin-top:10px;">
+                        + Aggiungi Esito
+                    </button>
+                </div>
+
+                <!-- Capitale e Saldi -->
+                <div class="card">
+                    <h3>💰 Capitale e Saldi</h3>
+                    
+                    <div class="form-group">
+                        <label>Capitale Totale Disponibile (€)</label>
+                        <input type="number" id="totalCapital" placeholder="Es: 1000" step="0.01">
+                    </div>
                     
                     <div class="form-row two-cols">
                         <div class="form-group">
@@ -252,7 +316,7 @@
                         </div>
                     </div>
                     
-                    <button class="btn btn-primary btn-large" onclick="calculate()">
+                    <button class="btn btn-primary btn-large" onclick="calculate()" style="margin-top:20px;">
                         🚀 CALCOLA
                     </button>
                 </div>
@@ -261,24 +325,18 @@
                 <div id="calcStatus" style="display:none;"></div>
 
                 <!-- Risultati -->
-                <div class="calc-results">
-                    <div id="resA" class="result-box" style="border:2px solid var(--primary);">
-                        <p style="color:var(--text-muted);text-align:center;">Inserisci i dati e clicca CALCOLA</p>
-                    </div>
-                    
-                    <div id="resB" class="result-box" style="border:2px solid var(--secondary);">
-                        <p style="color:var(--text-muted);text-align:center;">Inserisci i dati e clicca CALCOLA</p>
-                    </div>
+                <div id="calcResults" class="calc-results" style="display:none;">
+                    <!-- Generato da JS -->
                 </div>
 
                 <!-- Totale -->
-                <div class="card" style="margin-top:20px;text-align:center;">
-                    <h3>📈 Risultato Operazione</h3>
+                <div class="card" id="totalResultBox" style="display:none;margin-top:20px;text-align:center;">
+                    <h3>📈 Risultato Totale</h3>
                     <div style="font-size:2rem;color:var(--primary);margin:10px 0;">
                         Profitto: <span id="totProfit">-</span>
                     </div>
                     <div style="font-size:1.2rem;color:var(--secondary);">
-                        ROI: <span id="totRoi">-</span>
+                        ROI: <span id="totRoi">-</span> | Margin: <span id="totMargin">-</span>%
                     </div>
                 </div>
 
@@ -324,9 +382,7 @@
                         <h3>Lista</h3>
                         <button class="btn btn-primary" onclick="addBookmaker()">+ Aggiungi</button>
                     </div>
-                    <div id="bmList">
-                        <p style="color:var(--text-muted)">Nessun bookmaker</p>
-                    </div>
+                    <div id="bmList"><p style="color:var(--text-muted)">Nessun bookmaker</p></div>
                 </div>
             </section>
 
@@ -398,7 +454,6 @@
 
     </div>
 
-    <!-- MODAL -->
     <div id="modal" class="modal" style="display:none;">
         <div class="modal-box">
             <h3 id="modalTitle">Titolo</h3>
